@@ -4,6 +4,7 @@ import com.thanh.backend.common.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -22,11 +23,25 @@ public class GlobalExceptionHandler {
                 .body(response);
     }
 
+    /**
+     * Spring Security throw BadCredentialsException khi AuthenticationManager
+     * xác thực thất bại (sai email hoặc password).
+     * Phải bắt riêng — không để rơi vào handler Exception chung (500).
+     */
+    @ExceptionHandler(BadCredentialsException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException ex) {
+        ErrorCode errorCode = ErrorCode.INVALID_CREDENTIALS;
+        ApiResponse<Void> response = ApiResponse.error(errorCode.name(), errorCode.getMessage());
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(response);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ApiResponse<Void>> handleValidationException(MethodArgumentNotValidException ex) {
         FieldError fieldError = ex.getBindingResult().getFieldError();
         String errorMessage = fieldError != null ? fieldError.getDefaultMessage() : "Invalid input data";
-        
+
         ApiResponse<Void> response = ApiResponse.error("INVALID_INPUT", errorMessage);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
@@ -36,7 +51,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleGeneralException(Exception ex) {
         log.error("Unhandled exception occurred: ", ex);
-        
+
         ErrorCode errorCode = ErrorCode.INTERNAL_ERROR;
         ApiResponse<Void> response = ApiResponse.error(errorCode.name(), errorCode.getMessage());
         return ResponseEntity

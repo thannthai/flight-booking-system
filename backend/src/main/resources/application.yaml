@@ -19,6 +19,22 @@ spring:
     enabled: true
     baseline-on-migrate: true
 
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
+
+jwt:
+  secret-key: ${JWT_SECRET}
+  access-token-expiration: 900000
+  refresh-token-expiration: 604800000
+
+cors:
+  allowed-origins: http://localhost:5173
+
+cookie:
+  secure: false

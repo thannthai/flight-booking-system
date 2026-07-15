@@ -6,6 +6,7 @@ import lombok.Getter;
 public enum ErrorCode {
     USER_NOT_FOUND(404, "User not found"),
     EMAIL_EXISTED(409, "Email already exists"),
+    PHONE_EXISTED(409, "Phone number already exists"),
     INVALID_CREDENTIALS(401, "Invalid email or password"),
     TOKEN_EXPIRED(401, "Token expired"),
     TOKEN_INVALID(401, "Token invalid"),

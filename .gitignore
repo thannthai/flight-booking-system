@@ -1,2 +1,18 @@
+# OS
 .DS_Store
+Thumbs.db
+
+# IDE
 .idea/
+.vscode/
+*.iml
+
+# Env / Secrets — root level
+*.env
+.env*
+application-local.yaml
+application-local.yml
+
+# Logs
+*.log
+logs/

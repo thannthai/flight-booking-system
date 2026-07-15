@@ -56,7 +56,7 @@
 | Access Token blacklist | — | Redis `blacklist:{jti}` TTL 15ph |
 | Refresh Token | HttpOnly Cookie | Redis `refresh:{hash}` TTL 7 ngày |
 
-> **Lưu ý:** Bỏ bảng `REFRESH_TOKENS` khỏi migration — Redis đảm nhiệm hoàn toàn với TTL tự xóa, không cần scheduler dọn rác.
+> **Lưu ý:** Redis đảm nhiệm hoàn toàn với TTL tự xóa, không cần scheduler dọn rác.
 
 ---
 
