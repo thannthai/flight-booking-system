@@ -20,6 +20,9 @@ public enum ErrorCode {
     VOUCHER_EXPIRED(400, "Voucher has expired"),
     VOUCHER_EXCEEDED(409, "Voucher usage limit exceeded"),
     FORBIDDEN(403, "Access denied"),
+    AIRLINE_NOT_FOUND(404, "Airline not found"),
+    AIRLINE_CODE_EXISTED(409, "Airline code already exists"),
+    AIRLINE_HAS_ACTIVE_FLIGHTS(400, "Airline has active flights"),
     INTERNAL_ERROR(500, "Internal server error");
 
     private final int httpStatus;
