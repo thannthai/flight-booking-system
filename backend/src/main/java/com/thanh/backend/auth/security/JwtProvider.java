@@ -3,7 +3,6 @@ package com.thanh.backend.auth.security;
 import com.thanh.backend.auth.entity.User;
 import com.thanh.backend.auth.enums.TokenType;
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
