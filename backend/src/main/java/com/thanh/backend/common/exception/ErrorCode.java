@@ -27,6 +27,10 @@ public enum ErrorCode {
     AIRPORT_NOT_FOUND(HttpStatus.NOT_FOUND, "Airport not found"),
     AIRPORT_CODE_EXISTED(HttpStatus.CONFLICT, "Airport code already exists"),
     AIRPORT_HAS_ACTIVE_FLIGHTS(HttpStatus.BAD_REQUEST, "Airport has active flights"),
+    AIRCRAFT_NOT_FOUND(HttpStatus.NOT_FOUND, "Aircraft not found"),
+    AIRCRAFT_REGISTRATION_NO_EXISTED(HttpStatus.CONFLICT, "Aircraft registration number already exists"),
+    AIRCRAFT_HAS_ACTIVE_FLIGHTS(HttpStatus.BAD_REQUEST, "Aircraft has active flights"),
+    INVALID_AIRCRAFT_SEATS(HttpStatus.BAD_REQUEST, "Business seats and economy seats total must equal total seats"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error");
 
     private final HttpStatus httpStatus;

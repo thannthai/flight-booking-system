@@ -17,12 +17,14 @@ public interface AirportRepository extends JpaRepository<Airport, Long> {
 
     boolean existsByIataCode(String iataCode);
 
-    @Query("SELECT a FROM Airport a WHERE " +
-            "(:search IS NULL OR " +
-            "LOWER(a.name) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-            "LOWER(a.iataCode) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-            "LOWER(a.city) LIKE LOWER(CONCAT('%', :search, '%')) OR " +
-            "LOWER(a.country) LIKE LOWER(CONCAT('%', :search, '%'))) " +
-            "ORDER BY a.name")
+    @Query("""
+            SELECT a FROM Airport a WHERE
+            (:search IS NULL OR
+            LOWER(a.name) LIKE LOWER(CONCAT('%', :search, '%')) OR
+            LOWER(a.iataCode) LIKE LOWER(CONCAT('%', :search, '%')) OR
+            LOWER(a.city) LIKE LOWER(CONCAT('%', :search, '%')) OR
+            LOWER(a.country) LIKE LOWER(CONCAT('%', :search, '%')))
+            ORDER BY a.name
+            """)
     Page<Airport> searchAirports(@Param("search") String search, Pageable pageable);
 }
