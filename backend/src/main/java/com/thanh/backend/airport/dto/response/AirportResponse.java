@@ -18,6 +18,7 @@ public class AirportResponse {
     private String name;
     private String city;
     private String country;
+    private String timezone;
     private BigDecimal latitude;
     private BigDecimal longitude;
     private OffsetDateTime createdAt;

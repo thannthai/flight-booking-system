@@ -15,15 +15,19 @@ public interface AirportRepository extends JpaRepository<Airport, Long> {
 
     Optional<Airport> findByIataCode(String iataCode);
 
+    Optional<Airport> findByIataCodeIgnoreCase(String iataCode);
+
+    Optional<Airport> findFirstByCityIgnoreCase(String city);
+
     boolean existsByIataCode(String iataCode);
 
     @Query("""
             SELECT a FROM Airport a WHERE
-            (:search IS NULL OR
-            LOWER(a.name) LIKE LOWER(CONCAT('%', :search, '%')) OR
-            LOWER(a.iataCode) LIKE LOWER(CONCAT('%', :search, '%')) OR
-            LOWER(a.city) LIKE LOWER(CONCAT('%', :search, '%')) OR
-            LOWER(a.country) LIKE LOWER(CONCAT('%', :search, '%')))
+            (cast(:search as String) IS NULL OR
+            LOWER(a.name) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.iataCode) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.city) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.country) LIKE LOWER(CONCAT('%', cast(:search as String), '%')))
             ORDER BY a.name
             """)
     Page<Airport> searchAirports(@Param("search") String search, Pageable pageable);

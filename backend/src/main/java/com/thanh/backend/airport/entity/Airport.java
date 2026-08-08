@@ -33,6 +33,10 @@ public class Airport extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String country;
 
+    @Column(nullable = false, length = 50)
+    @Builder.Default
+    private String timezone = "Asia/Ho_Chi_Minh";
+
     @Column(precision = 9, scale = 6)
     private BigDecimal latitude;
 

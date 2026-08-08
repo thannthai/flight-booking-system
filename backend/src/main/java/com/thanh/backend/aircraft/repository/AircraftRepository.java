@@ -17,13 +17,21 @@ public interface AircraftRepository extends JpaRepository<Aircraft, Long> {
 
     boolean existsByRegistrationNo(String registrationNo);
 
-    @Query("""
+    @Query(value = """
             SELECT a FROM Aircraft a JOIN FETCH a.airline WHERE
-            (:search IS NULL OR
-            LOWER(a.model) LIKE LOWER(CONCAT('%', :search, '%')) OR
-            LOWER(a.registrationNo) LIKE LOWER(CONCAT('%', :search, '%')) OR
-            LOWER(a.airline.name) LIKE LOWER(CONCAT('%', :search, '%')) OR
-            LOWER(a.airline.code) LIKE LOWER(CONCAT('%', :search, '%')))
+            (cast(:search as String) IS NULL OR
+            LOWER(a.model) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.registrationNo) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.airline.name) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.airline.code) LIKE LOWER(CONCAT('%', cast(:search as String), '%')))
+            """,
+            countQuery = """
+            SELECT COUNT(a) FROM Aircraft a WHERE
+            (cast(:search as String) IS NULL OR
+            LOWER(a.model) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.registrationNo) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.airline.name) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
+            LOWER(a.airline.code) LIKE LOWER(CONCAT('%', cast(:search as String), '%')))
             """)
     Page<Aircraft> searchAircrafts(@Param("search") String search, Pageable pageable);
 }
