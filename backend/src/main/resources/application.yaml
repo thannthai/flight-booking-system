@@ -28,9 +28,10 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
 
+
 jwt:
   secret-key: ${JWT_SECRET}
-  access-token-expiration: 900000
+  access-token-expiration: 900000 
   refresh-token-expiration: 604800000
 
 cors:
@@ -38,3 +39,7 @@ cors:
 
 cookie:
   secure: false
+
+app:
+  booking:
+    hold-ttl-seconds: 900

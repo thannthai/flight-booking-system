@@ -31,16 +31,16 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
             JOIN FETCH f.aircraft
             JOIN FETCH f.origin
             JOIN FETCH f.dest
-            WHERE (:origin IS NULL OR LOWER(f.origin.iataCode) = LOWER(:origin) OR LOWER(f.origin.city) = LOWER(:origin))
-              AND (:destination IS NULL OR LOWER(f.dest.iataCode) = LOWER(:destination) OR LOWER(f.dest.city) = LOWER(:destination))
+            WHERE (:origin IS NULL OR FUNCTION('unaccent', LOWER(f.origin.iataCode)) = FUNCTION('unaccent', LOWER(:origin)) OR FUNCTION('unaccent', LOWER(f.origin.city)) = FUNCTION('unaccent', LOWER(:origin)))
+              AND (:destination IS NULL OR FUNCTION('unaccent', LOWER(f.dest.iataCode)) = FUNCTION('unaccent', LOWER(:destination)) OR FUNCTION('unaccent', LOWER(f.dest.city)) = FUNCTION('unaccent', LOWER(:destination)))
               AND (cast(:startOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime >= :startOfDay)
               AND (cast(:endOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime <= :endOfDay)
               AND (:status IS NULL OR f.status = :status)
             """,
             countQuery = """
             SELECT COUNT(f) FROM Flight f
-            WHERE (:origin IS NULL OR LOWER(f.origin.iataCode) = LOWER(:origin) OR LOWER(f.origin.city) = LOWER(:origin))
-              AND (:destination IS NULL OR LOWER(f.dest.iataCode) = LOWER(:destination) OR LOWER(f.dest.city) = LOWER(:destination))
+            WHERE (:origin IS NULL OR FUNCTION('unaccent', LOWER(f.origin.iataCode)) = FUNCTION('unaccent', LOWER(:origin)) OR FUNCTION('unaccent', LOWER(f.origin.city)) = FUNCTION('unaccent', LOWER(:origin)))
+              AND (:destination IS NULL OR FUNCTION('unaccent', LOWER(f.dest.iataCode)) = FUNCTION('unaccent', LOWER(:destination)) OR FUNCTION('unaccent', LOWER(f.dest.city)) = FUNCTION('unaccent', LOWER(:destination)))
               AND (cast(:startOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime >= :startOfDay)
               AND (cast(:endOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime <= :endOfDay)
               AND (:status IS NULL OR f.status = :status)

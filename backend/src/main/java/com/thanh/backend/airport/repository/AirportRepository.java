@@ -21,14 +21,23 @@ public interface AirportRepository extends JpaRepository<Airport, Long> {
 
     boolean existsByIataCode(String iataCode);
 
-    @Query("""
-            SELECT a FROM Airport a WHERE
-            (cast(:search as String) IS NULL OR
-            LOWER(a.name) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.iataCode) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.city) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.country) LIKE LOWER(CONCAT('%', cast(:search as String), '%')))
-            ORDER BY a.name
-            """)
+    @Query(value = """
+            SELECT * FROM airports WHERE
+            (cast(:search as varchar) IS NULL OR
+            unaccent(LOWER(name)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(iata_code)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(city)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(country)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))))
+            ORDER BY name
+            """,
+            countQuery = """
+            SELECT COUNT(*) FROM airports WHERE
+            (cast(:search as varchar) IS NULL OR
+            unaccent(LOWER(name)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(iata_code)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(city)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(country)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))))
+            """,
+            nativeQuery = true)
     Page<Airport> searchAirports(@Param("search") String search, Pageable pageable);
 }

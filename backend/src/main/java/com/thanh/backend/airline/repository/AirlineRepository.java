@@ -17,12 +17,19 @@ public interface AirlineRepository extends JpaRepository<Airline, Long> {
 
     boolean existsByCode(String code);
 
-    @Query("""
-            SELECT a FROM Airline a WHERE
-            (cast(:search as String) IS NULL OR
-            LOWER(a.name) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.code) LIKE LOWER(CONCAT('%', cast(:search as String), '%')))
-            ORDER BY a.name
-            """)
+    @Query(value = """
+            SELECT * FROM airlines WHERE
+            (cast(:search as varchar) IS NULL OR
+            unaccent(LOWER(name)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(code)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))))
+            ORDER BY name
+            """,
+            countQuery = """
+            SELECT COUNT(*) FROM airlines WHERE
+            (cast(:search as varchar) IS NULL OR
+            unaccent(LOWER(name)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(code)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))))
+            """,
+            nativeQuery = true)
     Page<Airline> searchAirlines(@Param("search") String search, Pageable pageable);
 }

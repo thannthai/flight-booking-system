@@ -18,20 +18,23 @@ public interface AircraftRepository extends JpaRepository<Aircraft, Long> {
     boolean existsByRegistrationNo(String registrationNo);
 
     @Query(value = """
-            SELECT a FROM Aircraft a JOIN FETCH a.airline WHERE
-            (cast(:search as String) IS NULL OR
-            LOWER(a.model) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.registrationNo) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.airline.name) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.airline.code) LIKE LOWER(CONCAT('%', cast(:search as String), '%')))
+            SELECT a.* FROM aircrafts a
+            JOIN airlines al ON a.airline_id = al.id WHERE
+            (cast(:search as varchar) IS NULL OR
+            unaccent(LOWER(a.model)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(a.registration_no)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(al.name)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(al.code)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))))
             """,
             countQuery = """
-            SELECT COUNT(a) FROM Aircraft a WHERE
-            (cast(:search as String) IS NULL OR
-            LOWER(a.model) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.registrationNo) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.airline.name) LIKE LOWER(CONCAT('%', cast(:search as String), '%')) OR
-            LOWER(a.airline.code) LIKE LOWER(CONCAT('%', cast(:search as String), '%')))
-            """)
+            SELECT COUNT(*) FROM aircrafts a
+            JOIN airlines al ON a.airline_id = al.id WHERE
+            (cast(:search as varchar) IS NULL OR
+            unaccent(LOWER(a.model)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(a.registration_no)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(al.name)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
+            unaccent(LOWER(al.code)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))))
+            """,
+            nativeQuery = true)
     Page<Aircraft> searchAircrafts(@Param("search") String search, Pageable pageable);
 }

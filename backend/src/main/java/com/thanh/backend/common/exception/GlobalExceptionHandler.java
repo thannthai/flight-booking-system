@@ -2,6 +2,7 @@ package com.thanh.backend.common.exception;
 
 import com.thanh.backend.common.response.ApiResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -45,6 +46,26 @@ public class GlobalExceptionHandler {
         ApiResponse<Void> response = ApiResponse.error("INVALID_INPUT", errorMessage);
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
+                .body(response);
+    }
+
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ApiResponse<Void>> handleHttpMessageNotReadable(org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        log.error("JSON parse or payload read error: ", ex);
+        ApiResponse<Void> response = ApiResponse.error("INVALID_INPUT", "Invalid request body format, date, or enum value");
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(response);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ApiResponse<Void>> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
+        log.error("Data integrity violation occurred: ", ex);
+
+        ErrorCode errorCode = ErrorCode.DATA_INTEGRITY_VIOLATION;
+        ApiResponse<Void> response = ApiResponse.error(errorCode.name(), errorCode.getMessage());
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
                 .body(response);
     }
 
