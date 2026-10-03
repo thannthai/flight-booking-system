@@ -115,6 +115,12 @@
             <version>1.6.3</version>
         </dependency>
 
+        <dependency>
+            <groupId>vn.payos</groupId>
+            <artifactId>payos-java</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+
     </dependencies>
 
     <build>

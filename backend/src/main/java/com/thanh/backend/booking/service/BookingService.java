@@ -291,6 +291,7 @@ public class BookingService {
                 .totalAmount(totalAmount)
                 .status(BookingStatus.PENDING)
                 .voucherId(request.getVoucherId())
+                .paymentDeadline(now.plusMinutes(15))
                 .build();
 
         Booking savedBooking = bookingRepository.save(booking);

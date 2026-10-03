@@ -29,6 +29,7 @@ public class BookingResponse {
     private BigDecimal discountAmount;
     private BigDecimal totalAmount;
     private BookingStatus status;
+    private OffsetDateTime paymentDeadline;
     private OffsetDateTime createdAt;
     private List<PassengerResponse> passengers;
     private List<TicketResponse> tickets;

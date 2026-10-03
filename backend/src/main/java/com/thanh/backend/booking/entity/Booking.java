@@ -79,4 +79,7 @@ public class Booking extends BaseEntity {
 
     @Column(name = "voucher_id")
     private Long voucherId;
+
+    @Column(name = "payment_deadline", nullable = false)
+    private OffsetDateTime paymentDeadline;
 }

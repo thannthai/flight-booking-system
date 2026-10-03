@@ -47,6 +47,13 @@ public enum ErrorCode {
     AIRCRAFT_HAS_ACTIVE_FLIGHTS(HttpStatus.BAD_REQUEST, "Aircraft has active flights"),
     INVALID_AIRCRAFT_SEATS(HttpStatus.BAD_REQUEST, "Business seats and economy seats total must equal total seats"),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT, "Database constraint violation"),
+    PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "Payment not found"),
+    PAYMENT_STATUS_INVALID(HttpStatus.BAD_REQUEST, "Payment status is invalid for this operation"),
+    BOOKING_STATUS_INVALID(HttpStatus.BAD_REQUEST, "Booking status is invalid for payment"),
+    BOOKING_PAYMENT_EXPIRED(HttpStatus.BAD_REQUEST, "Booking payment deadline has expired"),
+    PAYMENT_LINK_EXPIRED(HttpStatus.BAD_REQUEST, "Payment link has expired"),
+    INVALID_WEBHOOK_SIGNATURE(HttpStatus.BAD_REQUEST, "Invalid webhook signature"),
+    PAYMENT_GATEWAY_ERROR(HttpStatus.BAD_GATEWAY, "Payment gateway communication error"),
     INTERNAL_ERROR(HttpStatus.INTERNAL_SERVER_ERROR, "Internal server error");
 
     private final HttpStatus httpStatus;

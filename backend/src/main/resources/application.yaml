@@ -3,9 +3,9 @@ spring:
     name: backend
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/flight_booking
-    username: postgres
-    password: postgres
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/flight_booking}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
 
   jpa:
     hibernate:
@@ -43,3 +43,10 @@ cookie:
 app:
   booking:
     hold-ttl-seconds: 900
+
+payos:
+  client-id: ${PAYOS_CLIENT_ID}
+  api-key: ${PAYOS_API_KEY}
+  checksum-key: ${PAYOS_CHECKSUM_KEY}
+  return-url: ${PAYOS_RETURN_URL:http://localhost:5173/payment/success}
+  cancel-url: ${PAYOS_CANCEL_URL:http://localhost:5173/payment/cancel}
