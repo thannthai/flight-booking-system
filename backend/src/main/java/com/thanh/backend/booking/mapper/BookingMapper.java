@@ -11,33 +11,108 @@ import com.thanh.backend.booking.entity.Ticket;
 import com.thanh.backend.flight.dto.response.FlightSeatResponse;
 import com.thanh.backend.flight.entity.FlightSeat;
 import com.thanh.backend.flight.mapper.FlightMapper;
-import org.mapstruct.Mapper;
-import org.mapstruct.Mapping;
-import org.mapstruct.ReportingPolicy;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 
-@Mapper(
-        componentModel = "spring",
-        uses = {FlightMapper.class},
-        unmappedTargetPolicy = ReportingPolicy.IGNORE,
-        builder = @org.mapstruct.Builder(disableBuilder = true)
-)
-public interface BookingMapper {
+@Component
+@RequiredArgsConstructor
+public class BookingMapper {
 
-    @Mapping(target = "guardianId", source = "passenger.guardian.id")
-    PassengerResponse toPassengerResponse(Passenger passenger);
+    private final FlightMapper flightMapper;
 
-    FlightSeatResponse toSeatResponse(FlightSeat flightSeat);
+    public PassengerResponse toPassengerResponse(Passenger passenger) {
+        if (passenger == null) {
+            return null;
+        }
+        return PassengerResponse.builder()
+                .id(passenger.getId())
+                .fullName(passenger.getFullName())
+                .dateOfBirth(passenger.getDateOfBirth())
+                .gender(passenger.getGender())
+                .nationality(passenger.getNationality())
+                .guardianId(passenger.getGuardian() != null ? passenger.getGuardian().getId() : null)
+                .build();
+    }
 
-    @Mapping(target = "flight", source = "ticket.bookingLeg.flight")
-    @Mapping(target = "seat", source = "ticket.flightSeat")
-    @Mapping(target = "addOns", source = "addOns")
-    TicketResponse toTicketResponse(Ticket ticket, List<AddOnResponse> addOns);
+    public FlightSeatResponse toSeatResponse(FlightSeat flightSeat) {
+        if (flightSeat == null) {
+            return null;
+        }
+        return FlightSeatResponse.builder()
+                .id(flightSeat.getId())
+                .seatNo(flightSeat.getSeatNo())
+                .cabinClass(flightSeat.getCabinClass())
+                .price(flightSeat.getPrice())
+                .status(flightSeat.getStatus())
+                .build();
+    }
 
-    AddOnResponse toAddOnResponse(AddOnService addOnService);
+    public TicketResponse toTicketResponse(Ticket ticket, List<AddOnResponse> addOns) {
+        if (ticket == null && addOns == null) {
+            return null;
+        }
+        TicketResponse.TicketResponseBuilder builder = TicketResponse.builder();
+        if (ticket != null) {
+            builder.id(ticket.getId())
+                    .ticketNo(ticket.getTicketNo())
+                    .passengerType(ticket.getPassengerType())
+                    .price(ticket.getPrice())
+                    .status(ticket.getStatus())
+                    .issuedAt(ticket.getIssuedAt())
+                    .seat(toSeatResponse(ticket.getFlightSeat()));
 
-    @Mapping(target = "passengers", source = "passengers")
-    @Mapping(target = "tickets", source = "tickets")
-    BookingResponse toResponse(Booking booking, List<PassengerResponse> passengers, List<TicketResponse> tickets);
+            if (ticket.getBookingLeg() != null && ticket.getBookingLeg().getFlight() != null) {
+                builder.flight(flightMapper.toResponse(ticket.getBookingLeg().getFlight()));
+            }
+
+            if (ticket.getPassenger() != null) {
+                builder.passengerId(ticket.getPassenger().getId())
+                        .passengerName(ticket.getPassenger().getFullName())
+                        .passenger(toPassengerResponse(ticket.getPassenger()));
+            }
+        }
+        if (addOns != null) {
+            builder.addOns(new ArrayList<>(addOns));
+        }
+        return builder.build();
+    }
+
+    public AddOnResponse toAddOnResponse(AddOnService addOnService) {
+        if (addOnService == null) {
+            return null;
+        }
+        return AddOnResponse.builder()
+                .id(addOnService.getId())
+                .serviceType(addOnService.getServiceType())
+                .description(addOnService.getDescription())
+                .price(addOnService.getPrice())
+                .quantity(addOnService.getQuantity())
+                .build();
+    }
+
+    public BookingResponse toResponse(Booking booking, List<PassengerResponse> passengers, List<TicketResponse> tickets) {
+        if (booking == null) {
+            return null;
+        }
+        return BookingResponse.builder()
+                .id(booking.getId())
+                .pnr(booking.getPnr())
+                .contactName(booking.getContactName())
+                .contactEmail(booking.getContactEmail())
+                .contactPhone(booking.getContactPhone())
+                .tripType(booking.getTripType())
+                .baseAmount(booking.getBaseAmount())
+                .taxAmount(booking.getTaxAmount())
+                .discountAmount(booking.getDiscountAmount())
+                .totalAmount(booking.getTotalAmount())
+                .status(booking.getStatus())
+                .paymentDeadline(booking.getPaymentDeadline())
+                .createdAt(booking.getCreatedAt())
+                .passengers(passengers != null ? new ArrayList<>(passengers) : null)
+                .tickets(tickets != null ? new ArrayList<>(tickets) : null)
+                .build();
+    }
 }

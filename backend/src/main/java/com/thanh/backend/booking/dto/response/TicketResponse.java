@@ -28,5 +28,8 @@ public class TicketResponse {
     private OffsetDateTime issuedAt;
     private FlightResponse flight;
     private FlightSeatResponse seat;
+    private Long passengerId;
+    private String passengerName;
+    private PassengerResponse passenger;
     private List<AddOnResponse> addOns;
 }

@@ -324,8 +324,11 @@ public class PaymentServiceImpl implements PaymentService {
 
             // Quy tắc Strict: Thanh toán chỉ hợp lệ nếu transTime <= booking.paymentDeadline
             boolean isOnTime = !transTime.isAfter(booking.getPaymentDeadline());
+            
+            // XÁC MINH SỐ TIỀN: Bắt buộc số tiền chuyển khoản thực tế phải == số tiền cần thanh toán
+            boolean isAmountValid = data.getAmount() == lockedPayment.getAmount().longValue();
 
-            if (lockedPayment.getStatus() == PaymentStatus.PENDING && isOnTime) {
+            if (lockedPayment.getStatus() == PaymentStatus.PENDING && isOnTime && isAmountValid) {
                 // Thanh toán thành công đúng hạn
                 lockedPayment.setStatus(PaymentStatus.SUCCESS);
                 lockedPayment.setProviderTxnId(data.getReference());

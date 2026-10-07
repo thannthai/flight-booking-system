@@ -1,5 +1,6 @@
 package com.thanh.backend.booking.dto.response;
 
+import com.thanh.backend.booking.enums.DocumentType;
 import com.thanh.backend.booking.enums.Gender;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -21,4 +22,9 @@ public class PassengerResponse {
     private Gender gender;
     private String nationality;
     private Long guardianId;
+
+    private DocumentType identityType;
+    private String identityNumber;
+    private LocalDate identityExpiry;
 }
+

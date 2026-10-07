@@ -9,4 +9,5 @@ import java.util.List;
 @Repository
 public interface PassengerRepository extends JpaRepository<Passenger, Long> {
     List<Passenger> findByUserId(Long userId);
+    List<Passenger> findByGuardianId(Long guardianId);
 }

@@ -29,7 +29,7 @@ import java.time.LocalDate;
 public class Passenger extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
+    @JoinColumn(name = "user_id")
     private User user;
 
     @Column(name = "full_name", nullable = false, length = 100)

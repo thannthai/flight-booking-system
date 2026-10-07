@@ -110,25 +110,39 @@ public class BookingService {
                 if (seat.getFlight().getStatus() != FlightStatus.SCHEDULED && seat.getFlight().getStatus() != FlightStatus.DELAYED) {
                     throw new AppException(ErrorCode.FLIGHT_NOT_BOOKABLE);
                 }
+                if (seat.getFlight().getDepartureTime().isBefore(now)) {
+                    throw new AppException(ErrorCode.FLIGHT_ALREADY_DEPARTED);
+                }
 
                 boolean isAvailable = seat.getStatus() == SeatStatus.AVAILABLE
                         || (seat.getStatus() == SeatStatus.HELD
                         && seat.getHeldUntil() != null
-                        && seat.getHeldUntil().isBefore(now));
+                        && seat.getHeldUntil().isBefore(now))
+                        || (seat.getStatus() == SeatStatus.HELD
+                        && seat.getHeldByUser() != null
+                        && user.getId().equals(seat.getHeldByUser().getId()));
 
                 if (!isAvailable) {
                     throw new AppException(ErrorCode.SEAT_HELD);
                 }
 
                 String redisKey = "hold:seat:" + seatId;
-                Boolean acquired = redisTemplate.opsForValue().setIfAbsent(
-                        redisKey,
-                        user.getId().toString(),
-                        holdTtlSeconds,
-                        TimeUnit.SECONDS
-                );
+                String currentOwner = redisTemplate.opsForValue().get(redisKey);
+                
+                boolean acquired = false;
+                if (currentOwner == null) {
+                    acquired = Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(
+                            redisKey,
+                            user.getId().toString(),
+                            holdTtlSeconds,
+                            TimeUnit.SECONDS
+                    ));
+                } else if (currentOwner.equals(user.getId().toString())) {
+                    redisTemplate.expire(redisKey, holdTtlSeconds, TimeUnit.SECONDS);
+                    acquired = true;
+                }
 
-                if (!Boolean.TRUE.equals(acquired)) {
+                if (!acquired) {
                     throw new AppException(ErrorCode.SEAT_HELD);
                 }
 
@@ -214,6 +228,9 @@ public class BookingService {
             if (flight.getStatus() != FlightStatus.SCHEDULED && flight.getStatus() != FlightStatus.DELAYED) {
                 throw new AppException(ErrorCode.FLIGHT_NOT_BOOKABLE);
             }
+            if (flight.getDepartureTime().isBefore(now)) {
+                throw new AppException(ErrorCode.FLIGHT_ALREADY_DEPARTED);
+            }
             flights.add(flight);
         }
 
@@ -222,12 +239,12 @@ public class BookingService {
             Flight returnFlight = flights.get(1);
 
             if (!returnFlight.getDepartureTime().isAfter(outbound.getDepartureTime())) {
-                throw new AppException(ErrorCode.INVALID_TRIP_TYPE);
+                throw new AppException(ErrorCode.INVALID_RETURN_FLIGHT_TIME);
             }
 
             if (outbound.getDest() == null || returnFlight.getOrigin() == null
                     || !outbound.getDest().getId().equals(returnFlight.getOrigin().getId())) {
-                throw new AppException(ErrorCode.INVALID_TRIP_TYPE);
+                throw new AppException(ErrorCode.INVALID_RETURN_ROUTE);
             }
         }
 
@@ -682,10 +699,16 @@ public class BookingService {
                     throw new AppException(ErrorCode.INVALID_PASSENGER_INDEX);
                 }
 
+                String airlineCode = (leg.getFlight().getAirline() != null && leg.getFlight().getAirline().getCode() != null)
+                        ? leg.getFlight().getAirline().getCode()
+                        : "FL";
+                String ticketNo = String.format("%s-%s-%d-%02d", airlineCode, savedBooking.getPnr(), leg.getLegOrder(), i + 1);
+
                 if (pReq.getPassengerType() == PassengerType.INFANT) {
                     BigDecimal infantPrice = leg.getFlight().getBasePrice().multiply(INFANT_FARE_RATE).setScale(2, RoundingMode.HALF_UP);
 
                     Ticket ticket = Ticket.builder()
+                            .ticketNo(ticketNo)
                             .booking(savedBooking)
                             .bookingLeg(leg)
                             .passenger(passenger)
@@ -715,6 +738,7 @@ public class BookingService {
                     }
 
                     Ticket ticket = Ticket.builder()
+                            .ticketNo(ticketNo)
                             .booking(savedBooking)
                             .bookingLeg(leg)
                             .passenger(passenger)
@@ -851,5 +875,39 @@ public class BookingService {
             pnr = sb.toString();
         } while (bookingRepository.existsByPnr(pnr));
         return pnr;
+    }
+
+    /**
+     * Hủy Booking đang chờ thanh toán (PENDING) và Release toàn bộ ghế.
+     */
+    @Transactional
+    public void cancelBooking(User user, Long bookingId) {
+        Booking booking = bookingRepository.findById(bookingId)
+                .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+        if (!booking.getUser().getId().equals(user.getId()) && user.getRole() != UserRole.ROLE_ADMIN) {
+            throw new AppException(ErrorCode.UNAUTHORIZED_BOOKING_ACCESS);
+        }
+
+        if (booking.getStatus() != BookingStatus.PENDING) {
+            throw new AppException(ErrorCode.BOOKING_STATUS_INVALID);
+        }
+
+        booking.setStatus(BookingStatus.CANCELLED);
+        bookingRepository.save(booking);
+
+        List<Ticket> tickets = ticketRepository.findByBookingId(bookingId);
+        for (Ticket ticket : tickets) {
+            ticket.setStatus(TicketStatus.CANCELLED);
+            ticketRepository.save(ticket);
+
+            if (ticket.getFlightSeat() != null) {
+                ticket.getFlightSeat().setStatus(SeatStatus.AVAILABLE);
+                flightSeatRepository.save(ticket.getFlightSeat());
+                
+                // Release the hold from Redis so it becomes available immediately
+                redisTemplate.delete("hold:seat:" + ticket.getFlightSeat().getId());
+            }
+        }
     }
 }

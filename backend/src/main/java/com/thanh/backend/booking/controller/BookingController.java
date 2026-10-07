@@ -86,4 +86,17 @@ public class BookingController {
         Page<BookingResponse> bookings = bookingService.getMyBookings(principal.getUser(), pageable);
         return ApiResponse.success("User bookings retrieved successfully", PageResponse.of(bookings));
     }
+
+    /**
+     * Hủy đơn đặt vé đang chờ thanh toán (PENDING).
+     */
+    @PostMapping("/{id}/cancel")
+    @Operation(summary = "Cancel a pending booking and release held seats")
+    public ApiResponse<Void> cancelBooking(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @PathVariable Long id
+    ) {
+        bookingService.cancelBooking(principal.getUser(), id);
+        return ApiResponse.success("Booking cancelled successfully and seats released", null);
+    }
 }
