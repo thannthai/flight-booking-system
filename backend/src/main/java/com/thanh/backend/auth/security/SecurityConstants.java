@@ -11,6 +11,7 @@ public final class SecurityConstants {
     private SecurityConstants() {}
 
     public static final String[] PUBLIC_ENDPOINTS = {
+            "/actuator/health",
             "/api/v1/auth/register",
             "/api/v1/auth/login",
             "/api/v1/auth/refresh",
