@@ -54,7 +54,7 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Run Maven Tests & Flyway Validations
+      - name: Verify Backend (Unit Tests, Integration Tests & JAR)
         working-directory: backend
         env:
           DB_URL: jdbc:postgresql://localhost:5432/flight_booking
@@ -64,8 +64,4 @@ jobs:
           PAYOS_CLIENT_ID: dummy-client-id-for-ci
           PAYOS_API_KEY: dummy-api-key-for-ci
           PAYOS_CHECKSUM_KEY: dummy-checksum-key-for-ci
-        run: mvn clean test
-
-      - name: Package Application Artifact (JAR)
-        working-directory: backend
-        run: mvn package -DskipTests
+        run: ./mvnw clean verify
