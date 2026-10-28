@@ -1,10 +1,15 @@
 package com.thanh.backend.flight.repository;
 
+import com.thanh.backend.auth.entity.User;
 import com.thanh.backend.flight.entity.FlightSeat;
 import com.thanh.backend.flight.enums.SeatStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 
 @Repository
@@ -13,4 +18,50 @@ public interface FlightSeatRepository extends JpaRepository<FlightSeat, Long> {
     List<FlightSeat> findByFlightId(Long flightId);
 
     List<FlightSeat> findByFlightIdAndStatus(Long flightId, SeatStatus status);
+
+    @Modifying
+    @Query("""
+            UPDATE FlightSeat s
+            SET s.status = com.thanh.backend.flight.enums.SeatStatus.HELD,
+                s.heldByUser = :user,
+                s.heldUntil = :expiresAt,
+                s.updatedAt = cast(function('clock_timestamp') as OffsetDateTime)
+            WHERE s.id = :seatId
+              AND :expiresAt > cast(function('clock_timestamp') as OffsetDateTime)
+              AND (s.status = com.thanh.backend.flight.enums.SeatStatus.AVAILABLE
+                   OR (s.status = com.thanh.backend.flight.enums.SeatStatus.HELD
+                       AND (s.heldUntil < cast(function('clock_timestamp') as OffsetDateTime)
+                            OR (s.heldByUser = :user AND s.heldUntil = :expiresAt))))
+            """)
+    int acquireHoldIfAvailable(
+            @Param("seatId") Long seatId,
+            @Param("user") User user,
+            @Param("expiresAt") OffsetDateTime expiresAt);
+
+    // PostgreSQL CURRENT_TIMESTAMP is fixed at transaction start; expiry needs
+    // database wall-clock time.
+    @Modifying
+    @Query("""
+                UPDATE FlightSeat s
+                SET s.status = :newStatus,
+                    s.heldByUser = null,
+                    s.heldUntil = null
+                WHERE s.id = :seatId
+                  AND s.status = :expectedStatus
+                  AND s.heldByUser.id = :userId
+                  AND s.heldUntil > cast(function('clock_timestamp') as OffsetDateTime)
+            """)
+    int claimHeldSeatForBooking(
+            @Param("seatId") Long seatId,
+            @Param("expectedStatus") SeatStatus expectedStatus,
+            @Param("newStatus") SeatStatus newStatus,
+            @Param("userId") Long userId);
+
+    // Reconciliation must serialize with DB writers and retain any live hold.
+    // NOWAIT makes cleanup best effort instead of blocking a competing request.
+    @Query(value = """
+            SELECT status = 'HELD' AND held_until > clock_timestamp()
+            FROM flight_seats WHERE id = :seatId FOR UPDATE NOWAIT
+            """, nativeQuery = true)
+    Boolean hasLiveHoldForLeaseCleanup(@Param("seatId") Long seatId);
 }

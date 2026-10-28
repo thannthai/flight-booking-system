@@ -216,6 +216,7 @@ class PaymentServiceImplTest {
                 paymentService.createPaymentLink(1L, 999L)); // Another user
 
         assertEquals(ErrorCode.UNAUTHORIZED_BOOKING_ACCESS, ex.getErrorCode());
+        verify(payOSGatewayService, never()).createPaymentLink(any());
     }
 
     @Test
@@ -228,6 +229,7 @@ class PaymentServiceImplTest {
                 paymentService.createPaymentLink(1L, 100L));
 
         assertEquals(ErrorCode.BOOKING_PAYMENT_EXPIRED, ex.getErrorCode());
+        verify(payOSGatewayService, never()).createPaymentLink(any());
     }
 
     @Test
@@ -274,6 +276,7 @@ class PaymentServiceImplTest {
                 .booking(testBooking)
                 .orderCode(1000000001L)
                 .status(PaymentStatus.PENDING)
+                .amount(new BigDecimal("1500000"))
                 .build();
         ReflectionTestUtils.setField(payment, "id", 10L);
 
@@ -330,6 +333,7 @@ class PaymentServiceImplTest {
                 .orderCode(1000000001L)
                 .status(PaymentStatus.PENDING)
                 .refundStatus(RefundStatus.NONE)
+                .amount(new BigDecimal("1500000"))
                 .build();
         ReflectionTestUtils.setField(payment, "id", 10L);
 

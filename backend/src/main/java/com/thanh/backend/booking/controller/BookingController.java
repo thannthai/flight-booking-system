@@ -38,13 +38,13 @@ public class BookingController {
      * Giữ ghế trong 15 phút (Redis Hold + Database Atomic Lock).
      */
     @PostMapping("/hold-seats")
-    @Operation(summary = "Hold flight seats for 15 minutes in Redis and Database")
+    @Operation(summary = "Hold flight seats with a fixed 15-minute deadline; retries do not extend it")
     public ApiResponse<HoldSeatsResponse> holdSeats(
             @AuthenticationPrincipal UserPrincipal principal,
             @Valid @RequestBody HoldSeatsRequest request
     ) {
         HoldSeatsResponse response = bookingService.holdSeats(principal.getUser(), request);
-        return ApiResponse.success("Seats held successfully for 15 minutes", response);
+        return ApiResponse.success("Seats held successfully", response);
     }
 
     /**

@@ -25,6 +25,7 @@ import com.thanh.backend.booking.enums.LegDirection;
 import com.thanh.backend.booking.enums.PassengerType;
 import com.thanh.backend.booking.enums.TicketStatus;
 import com.thanh.backend.booking.enums.TripType;
+import com.thanh.backend.booking.infrastructure.redis.SeatHoldLeaseStore;
 import com.thanh.backend.booking.mapper.BookingMapper;
 import com.thanh.backend.booking.repository.AddOnServiceRepository;
 import com.thanh.backend.booking.repository.BookingLegRepository;
@@ -38,14 +39,12 @@ import com.thanh.backend.flight.entity.Flight;
 import com.thanh.backend.flight.entity.FlightSeat;
 import com.thanh.backend.flight.enums.FlightStatus;
 import com.thanh.backend.flight.enums.SeatStatus;
-import com.thanh.backend.flight.mapper.FlightMapper;
 import com.thanh.backend.flight.repository.FlightRepository;
 import com.thanh.backend.flight.repository.FlightSeatRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -53,17 +52,19 @@ import org.springframework.util.StringUtils;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.SecureRandom;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.Period;
 import java.time.ZoneOffset;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -85,10 +86,11 @@ public class BookingService {
     private final FlightRepository flightRepository;
     private final FlightSeatRepository flightSeatRepository;
     private final BookingMapper bookingMapper;
-    private final StringRedisTemplate redisTemplate;
+    private final SeatHoldLeaseStore leaseStore;
+    private final SeatHoldTransactionLifecycle leaseLifecycle;
 
     /**
-     * Giữ ghế trong 15 phút (Redis Pure SETNX Lock + Atomic DB Seat Locking).
+     * Giữ ghế với deadline cố định 15 phút; retry không gia hạn.
      */
     @Transactional
     public HoldSeatsResponse holdSeats(User user, HoldSeatsRequest request) {
@@ -98,84 +100,70 @@ public class BookingService {
         }
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
-        OffsetDateTime expiresAt = now.plusSeconds(holdTtlSeconds);
+        OffsetDateTime expiresAt = null;
 
         List<Long> successfullyHeldSeats = new ArrayList<>();
+        Map<Long, SeatHoldLeaseStore.Hold> holds = new HashMap<>();
 
-        try {
-            for (Long seatId : request.getSeatIds()) {
-                FlightSeat seat = flightSeatRepository.findById(seatId)
-                        .orElseThrow(() -> new AppException(ErrorCode.SEAT_NOT_AVAILABLE));
+        for (Long seatId : request.getSeatIds()) {
+            FlightSeat seat = flightSeatRepository.findById(seatId)
+                    .orElseThrow(() -> new AppException(ErrorCode.SEAT_NOT_AVAILABLE));
 
-                if (seat.getFlight().getStatus() != FlightStatus.SCHEDULED && seat.getFlight().getStatus() != FlightStatus.DELAYED) {
-                    throw new AppException(ErrorCode.FLIGHT_NOT_BOOKABLE);
-                }
-                if (seat.getFlight().getDepartureTime().isBefore(now)) {
-                    throw new AppException(ErrorCode.FLIGHT_ALREADY_DEPARTED);
-                }
-
-                boolean isAvailable = seat.getStatus() == SeatStatus.AVAILABLE
-                        || (seat.getStatus() == SeatStatus.HELD
-                        && seat.getHeldUntil() != null
-                        && seat.getHeldUntil().isBefore(now))
-                        || (seat.getStatus() == SeatStatus.HELD
-                        && seat.getHeldByUser() != null
-                        && user.getId().equals(seat.getHeldByUser().getId()));
-
-                if (!isAvailable) {
-                    throw new AppException(ErrorCode.SEAT_HELD);
-                }
-
-                String redisKey = "hold:seat:" + seatId;
-                String currentOwner = redisTemplate.opsForValue().get(redisKey);
-                
-                boolean acquired = false;
-                if (currentOwner == null) {
-                    acquired = Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(
-                            redisKey,
-                            user.getId().toString(),
-                            holdTtlSeconds,
-                            TimeUnit.SECONDS
-                    ));
-                } else if (currentOwner.equals(user.getId().toString())) {
-                    redisTemplate.expire(redisKey, holdTtlSeconds, TimeUnit.SECONDS);
-                    acquired = true;
-                }
-
-                if (!acquired) {
-                    throw new AppException(ErrorCode.SEAT_HELD);
-                }
-
-                try {
-                    seat.setStatus(SeatStatus.HELD);
-                    seat.setHeldByUser(user);
-                    seat.setHeldUntil(expiresAt);
-                    flightSeatRepository.save(seat);
-                } catch (Exception e) {
-                    String currentLockOwner = redisTemplate.opsForValue().get(redisKey);
-                    if (user.getId().toString().equals(currentLockOwner)) {
-                        redisTemplate.delete(redisKey);
-                    }
-                    throw e;
-                }
-
-                successfullyHeldSeats.add(seatId);
+            if (seat.getFlight().getStatus() != FlightStatus.SCHEDULED && seat.getFlight().getStatus() != FlightStatus.DELAYED) {
+                throw new AppException(ErrorCode.FLIGHT_NOT_BOOKABLE);
             }
-        } catch (Exception e) {
-            for (Long heldSeatId : successfullyHeldSeats) {
-                String redisKey = "hold:seat:" + heldSeatId;
-                String currentOwner = redisTemplate.opsForValue().get(redisKey);
-                if (user.getId().toString().equals(currentOwner)) {
-                    redisTemplate.delete(redisKey);
-                }
+            if (seat.getFlight().getDepartureTime().isBefore(now)) {
+                throw new AppException(ErrorCode.FLIGHT_ALREADY_DEPARTED);
             }
-            throw e;
+
+            boolean isAvailable = seat.getStatus() == SeatStatus.AVAILABLE
+                    || (seat.getStatus() == SeatStatus.HELD
+                    && seat.getHeldUntil() != null
+                    && seat.getHeldUntil().isBefore(now))
+                    || (seat.getStatus() == SeatStatus.HELD
+                    && seat.getHeldByUser() != null
+                    && user.getId().equals(seat.getHeldByUser().getId()));
+
+            if (!isAvailable) {
+                throw new AppException(ErrorCode.SEAT_HELD);
+            }
+
+            OffsetDateTime liveDbDeadline = seat.getStatus() == SeatStatus.HELD
+                    && seat.getHeldByUser() != null && user.getId().equals(seat.getHeldByUser().getId())
+                    && seat.getHeldUntil() != null && seat.getHeldUntil().isAfter(OffsetDateTime.now(ZoneOffset.UTC))
+                    ? seat.getHeldUntil().truncatedTo(ChronoUnit.MILLIS) : null;
+            SeatHoldLeaseStore.Lease candidate = new SeatHoldLeaseStore.Lease(seatId, user.getId(), UUID.randomUUID());
+            leaseLifecycle.cleanupAcquisitionOnRollback(candidate);
+            SeatHoldLeaseStore.Hold hold = leaseStore.acquireOrReuse(
+                            candidate, Duration.ofSeconds(holdTtlSeconds), liveDbDeadline)
+                    .orElseThrow(() -> new AppException(ErrorCode.SEAT_HELD));
+            holds.put(seatId, hold);
+
+            // Recheck the current DB row: the entity read before Redis acquisition may be stale.
+            // Outer cleanup retains the exact lease even if this DB acquisition fails.
+            if (flightSeatRepository.acquireHoldIfAvailable(seatId, user, hold.expiresAt()) == 0) {
+                throw new AppException(ErrorCode.SEAT_HELD);
+            }
+            // Leave the managed entity unchanged so dirty checking cannot overwrite the CAS result.
+
+            successfullyHeldSeats.add(seatId);
+            if (expiresAt == null || hold.expiresAt().isBefore(expiresAt)) {
+                expiresAt = hold.expiresAt();
+            }
+        }
+        // DB UPDATE may wait for a row lock. Recheck the captured generation and
+        // deadline after all updates, without adopting or mutating a newer lease.
+        for (SeatHoldLeaseStore.Hold hold : holds.values()) {
+            if (!leaseStore.isCurrent(hold, user.getId())) {
+                throw new AppException(ErrorCode.SEAT_HELD);
+            }
         }
 
         return HoldSeatsResponse.builder()
                 .heldSeats(successfullyHeldSeats)
                 .expiresAt(expiresAt)
-                .ttlSeconds(holdTtlSeconds)
+                .ttlSeconds(Math.max(0, Math.min(holdTtlSeconds,
+                        (Duration.between(OffsetDateTime.now(ZoneOffset.UTC), expiresAt).toMillis() + 999) / 1000)))
                 .build();
     }
 
@@ -281,7 +269,9 @@ public class BookingService {
         // -------------------------------------------------------------
         // Business Validation 6: Validate danh sách ghế chọn (seatSelections)
         // -------------------------------------------------------------
-        validateSeatSelections(seatSelections, flights, passengerReqs, user, now);
+        Map<Long, SeatHoldLeaseStore.Hold> validatedLeases =
+                validateSeatSelections(seatSelections, flights, passengerReqs, user, now);
+        leaseLifecycle.consumeAfterCommit(new ArrayList<>(validatedLeases.values()), user.getId());
 
         // -------------------------------------------------------------
         // 1. Tính toán tổng số tiền (Fare Calculation theo Project Rules)
@@ -333,7 +323,8 @@ public class BookingService {
         Map<Integer, Passenger> passengerMap = savePassengersAndDocuments(user, passengerReqs);
 
         // 6. Lưu Vé điện tử (Ticket) & AddOn Services Snapshot bằng passengerMap chính xác 100%
-        List<Ticket> savedTickets = saveTicketsAndAddOns(savedBooking, savedLegs, passengerMap, passengerReqs, seatSelections);
+        List<Ticket> savedTickets = saveTicketsAndAddOns(
+                savedBooking, savedLegs, passengerMap, passengerReqs, seatSelections, validatedLeases);
 
         List<Passenger> savedPassengersList = new ArrayList<>(passengerMap.values());
         return buildBookingResponse(savedBooking, savedPassengersList, savedTickets);
@@ -494,7 +485,7 @@ public class BookingService {
     /**
      * Validate danh sách ghế được chọn (seatSelections) theo từng chặng bay.
      */
-    private void validateSeatSelections(List<SeatSelectionRequest> seatSelections, List<Flight> flights,
+    private Map<Long, SeatHoldLeaseStore.Hold> validateSeatSelections(List<SeatSelectionRequest> seatSelections, List<Flight> flights,
                                        List<PassengerRequest> passengerReqs, User user, OffsetDateTime now) {
         int seatableCount = 0;
         for (PassengerRequest p : passengerReqs) {
@@ -517,6 +508,7 @@ public class BookingService {
 
         Set<String> processedPassengerFlightPairs = new HashSet<>();
         Set<Long> processedSeatIds = new HashSet<>();
+        Map<Long, SeatHoldLeaseStore.Hold> validatedLeases = new HashMap<>();
 
         for (SeatSelectionRequest seatReq : seatSelections) {
             if (seatReq.getPassengerIndex() == null || seatReq.getPassengerIndex() < 0 || seatReq.getPassengerIndex() >= passengerReqs.size()) {
@@ -564,11 +556,11 @@ public class BookingService {
                 throw new AppException(ErrorCode.SEAT_NOT_AVAILABLE);
             }
 
-            String lockOwner = redisTemplate.opsForValue().get("hold:seat:" + seat.getId());
-            if (!user.getId().toString().equals(lockOwner)) {
-                throw new AppException(ErrorCode.SEAT_NOT_AVAILABLE);
-            }
+            SeatHoldLeaseStore.Lease lease = leaseStore.readOwned(seat.getId(), user.getId())
+                    .orElseThrow(() -> new AppException(ErrorCode.SEAT_NOT_AVAILABLE));
+            validatedLeases.put(seat.getId(), new SeatHoldLeaseStore.Hold(lease, seat.getHeldUntil(), false));
         }
+        return validatedLeases;
     }
 
     /**
@@ -685,7 +677,8 @@ public class BookingService {
      */
     private List<Ticket> saveTicketsAndAddOns(Booking savedBooking, List<BookingLeg> savedLegs,
                                              Map<Integer, Passenger> passengerMap, List<PassengerRequest> passengerReqs,
-                                             List<SeatSelectionRequest> seatSelections) {
+                                             List<SeatSelectionRequest> seatSelections,
+                                             Map<Long, SeatHoldLeaseStore.Hold> validatedLeases) {
         List<Ticket> savedTickets = new ArrayList<>();
 
         for (BookingLeg leg : savedLegs) {
@@ -727,10 +720,27 @@ public class BookingService {
                             .orElseThrow(() -> new AppException(ErrorCode.INVALID_SEAT_SELECTION));
 
                     FlightSeat seat = flightSeatRepository.findById(seatReq.getFlightSeatId()).orElseThrow();
+
+                    // Atomic conditional claim: only transition HELD -> BOOKED if the seat is strictly held by the authenticated booking owner
+                    int claimedRows = flightSeatRepository.claimHeldSeatForBooking(
+                            seat.getId(),
+                            SeatStatus.HELD,
+                            SeatStatus.BOOKED,
+                            savedBooking.getUser().getId()
+                    );
+                    if (claimedRows == 0) {
+                        throw new AppException(ErrorCode.SEAT_NOT_AVAILABLE);
+                    }
+
+                    // Verify without consuming: rollback must preserve every original hold.
+                    // Exact snapshots are compare-deleted only after the database commits.
+                    if (!leaseStore.isCurrent(validatedLeases.get(seat.getId()), savedBooking.getUser().getId())) {
+                        throw new AppException(ErrorCode.SEAT_NOT_AVAILABLE);
+                    }
+
                     seat.setStatus(SeatStatus.BOOKED);
                     seat.setHeldUntil(null);
                     seat.setHeldByUser(null);
-                    flightSeatRepository.save(seat);
 
                     BigDecimal seatPrice = seat.getPrice();
                     if (pReq.getPassengerType() == PassengerType.CHILD) {
@@ -905,8 +915,8 @@ public class BookingService {
                 ticket.getFlightSeat().setStatus(SeatStatus.AVAILABLE);
                 flightSeatRepository.save(ticket.getFlightSeat());
                 
-                // Release the hold from Redis so it becomes available immediately
-                redisTemplate.delete("hold:seat:" + ticket.getFlightSeat().getId());
+                // Creation schedules exact-token cleanup after commit. This cancel operation
+                // has no captured identity authorizing deletion of a current Redis key.
             }
         }
     }

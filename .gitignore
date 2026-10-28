@@ -16,3 +16,6 @@ application-local.yml
 # Logs
 *.log
 logs/
+
+# Java compiled artifacts
+*.class
