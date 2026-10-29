@@ -67,7 +67,8 @@ public class DemoFlightWriter {
             selected=a;
         }
         if(selected==null && pair.airline().isFallback()) {
-            String registration="DEMO-"+pair.airline().getCode()+"-01";
+            // Route namespace avoids collisions with legacy shared DEMO-<airline>-01 aircraft.
+            String registration="DEMO-"+pair.airline().getCode()+"-R"+route.getOutboundSlot();
             repository.fallback(airline,registration);
             selected=aircrafts.findByRegistrationNo(registration).orElseThrow();
             if(!valid(selected,airline)||!selected.getModel().equals("DEMO regional layout")

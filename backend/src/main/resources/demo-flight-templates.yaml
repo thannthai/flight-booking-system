@@ -1,3 +1,4 @@
+# Six return pairs daily with the default 12-flight cap. Existing occurrences are insert-only.
 app:
   demo-flights:
     schedules:

@@ -34,7 +34,7 @@ class DemoFlightGeneratorIT extends AbstractIntegrationTest {
         while(properties.getSchedules().size()>1) properties.getSchedules().removeLast();
         properties.setEnabled(true);
         properties.setAllowedJdbcUrl(environment.getProperty("spring.datasource.url"));
-        properties.setMaxFlightsPerDay(10);
+        properties.setMaxFlightsPerDay(12);
         properties.setMaxWindowSeats(90000);
         generator=new DemoFlightGenerator(safety,properties,templates,writer,clock);
         for(String airport:new String[]{"SGN","HAN","DAD","SIN","BKK","ICN"}) {
@@ -60,10 +60,10 @@ class DemoFlightGeneratorIT extends AbstractIntegrationTest {
             a.get(45,TimeUnit.SECONDS);b.get(45,TimeUnit.SECONDS);
         } finally {workers.shutdownNow();assertTrue(workers.awaitTermination(10,TimeUnit.SECONDS));}
         generator.reconcile();
-        assertEquals(180,count("flights"));assertEquals(39240,count("flight_seats"));
+        assertEquals(360,count("flights"));assertEquals(71640,count("flight_seats"));
         assertEquals(3,jdbcTemplate.queryForObject("SELECT count(DISTINCT airline_code_id) FROM flights",Integer.class));
         assertEquals(0,jdbcTemplate.queryForObject("SELECT count(*) FROM (SELECT flight_id,seat_no FROM flight_seats GROUP BY 1,2 HAVING count(*)>1) x",Integer.class));
-        assertEquals(0,jdbcTemplate.queryForObject("SELECT count(*) FROM (SELECT (departure_time AT TIME ZONE 'Asia/Ho_Chi_Minh')::date FROM flights GROUP BY 1 HAVING count(*)>10) x",Integer.class));
+        assertEquals(0,jdbcTemplate.queryForObject("SELECT count(*) FROM (SELECT (departure_time AT TIME ZONE 'Asia/Ho_Chi_Minh')::date FROM flights GROUP BY 1 HAVING count(*)>12) x",Integer.class));
         var next=new DemoFlightProperties.Schedule();next.setValidFrom(LocalDate.of(2027,3,3));
         next.setAirlines(new java.util.ArrayList<>(properties.getSchedules().getFirst().getAirlines()));
         var extra=json.convertValue(next.getAirlines().getFirst(),DemoFlightProperties.Airline.class);
@@ -74,9 +74,60 @@ class DemoFlightGeneratorIT extends AbstractIntegrationTest {
         jdbcTemplate.update("INSERT INTO airlines(code,name) VALUES ('ZZ','Configured new airline')");
         now.set(now.get().plus(Duration.ofDays(1)));generator.reconcile();
         assertEquals(2,jdbcTemplate.queryForObject("SELECT count(*) FROM flights f JOIN airlines a ON a.id=f.airline_code_id WHERE a.code='ZZ'",Integer.class));
-        assertEquals(1,jdbcTemplate.queryForObject("SELECT count(*) FROM aircrafts WHERE registration_no='DEMO-ZZ-01'",Integer.class));
-        assertEquals(188,count("flights"));
+        assertEquals(1,jdbcTemplate.queryForObject("SELECT count(*) FROM aircrafts WHERE registration_no='DEMO-ZZ-RZ1'",Integer.class));
+        assertEquals(372,count("flights"));
 
+    }
+    @Test void allConfiguredRoutesRunDailyWithoutAircraftOverlap() {
+        generator.reconcile();
+        assertEquals(360, count("flights"));
+        assertEquals(12, jdbcTemplate.queryForObject("SELECT count(DISTINCT (origin_iata_id,dest_iata_id)) FROM flights", Integer.class));
+        assertEquals(0, jdbcTemplate.queryForObject("SELECT count(*) FROM (SELECT origin_iata_id,dest_iata_id FROM flights GROUP BY 1,2 HAVING count(*)<>30) x", Integer.class));
+        assertEquals(0, jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM flights a JOIN flights b ON a.aircraft_id=b.aircraft_id AND a.id<b.id
+                WHERE a.departure_time < b.arrival_time + interval '1 hour'
+                  AND b.departure_time < a.arrival_time + interval '1 hour'
+                """, Integer.class));
+    }
+    @Test void fillsLegacyAlternatingScheduleWithoutChangingExistingFlightsOrSeats() {
+        var schedule = properties.getSchedules().getFirst();
+        LocalDate today = LocalDate.of(2027,2,1);
+        // Simulate a deployment that used the original shared fallback aircraft.
+        var registrations = new java.util.HashMap<String,java.util.List<String>>();
+        for (var airline : schedule.getAirlines()) {
+            registrations.put(airline.getCode(),airline.getAircraft());
+            String legacy = "DEMO-"+airline.getCode()+"-01";
+            jdbcTemplate.update("UPDATE aircrafts SET registration_no=?,model='DEMO regional layout',total_seats=180,business_seats=24,economy_seats=156 WHERE airline_code_id=(SELECT id FROM airlines WHERE code=?)",legacy,airline.getCode());
+            airline.setAircraft(java.util.List.of(legacy));
+        }
+        try {
+            for (int day = 0; day < 30; day++) {
+                LocalDate date = today.plusDays(day);
+                int route = (int) (java.time.temporal.ChronoUnit.DAYS.between(schedule.getValidFrom(),date) % 2);
+                for (var airline : schedule.getAirlines()) {
+                    var pair = new DemoFlightTemplates.Pair(airline,airline.getRoutes().get(route),date);
+                    assertTrue(writer.create(pair,false));
+                    assertTrue(writer.create(pair,true));
+                }
+            }
+        } finally {
+            for (var airline : schedule.getAirlines()) airline.setAircraft(registrations.get(airline.getCode()));
+        }
+        assertEquals(180,count("flights"));
+        var oldFlights = jdbcTemplate.queryForList("SELECT * FROM flights ORDER BY id");
+        long lastFlight = jdbcTemplate.queryForObject("SELECT max(id) FROM flights",Long.class);
+        var oldSeats = jdbcTemplate.queryForList("SELECT * FROM flight_seats ORDER BY id");
+        long lastSeat = jdbcTemplate.queryForObject("SELECT max(id) FROM flight_seats",Long.class);
+        generator.reconcile();
+        generator.reconcile();
+        assertEquals(360,count("flights"));
+        assertEquals(oldFlights,jdbcTemplate.queryForList("SELECT * FROM flights WHERE id<=? ORDER BY id",lastFlight));
+        assertEquals(oldSeats,jdbcTemplate.queryForList("SELECT * FROM flight_seats WHERE id<=? ORDER BY id",lastSeat));
+        assertEquals(0, jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM flights a JOIN flights b ON a.aircraft_id=b.aircraft_id AND a.id<b.id
+                WHERE a.departure_time < b.arrival_time + interval '1 hour'
+                  AND b.departure_time < a.arrival_time + interval '1 hour'
+                """, Integer.class));
     }
     @Test void atomicFailureAndMissingAirlineAreIsolated() {
         jdbcTemplate.update("DELETE FROM aircrafts WHERE airline_code_id=(SELECT id FROM airlines WHERE code='VN')");
@@ -90,7 +141,7 @@ class DemoFlightGeneratorIT extends AbstractIntegrationTest {
         jdbcTemplate.update("DELETE FROM aircrafts WHERE airline_code_id=(SELECT id FROM airlines WHERE code='VJ')");
         jdbcTemplate.update("DELETE FROM airlines WHERE code='VJ'");
         assertDoesNotThrow(generator::reconcile);
-        assertEquals(120,count("flights"));
+        assertEquals(240,count("flights"));
         assertEquals(0,jdbcTemplate.queryForObject("SELECT count(*) FROM flight_seats WHERE status<>'AVAILABLE'",Integer.class));
     }
     @Test void downtimePreservesExistingHistoryAndHeldInventory() {
@@ -112,9 +163,12 @@ class DemoFlightGeneratorIT extends AbstractIntegrationTest {
         assertEquals(flight,jdbcTemplate.queryForMap("SELECT * FROM flights WHERE id=?",id));
         assertEquals(seats,jdbcTemplate.queryForList("SELECT * FROM flight_seats WHERE flight_id=? ORDER BY id",id));
         assertEquals(graph,jdbcTemplate.queryForList("SELECT * FROM payments WHERE booking_id=?",booking));
-        assertEquals(1,count("booking"));assertEquals(1,count("tickets"));assertEquals(181,count("flights"));
+        assertEquals(1,count("booking"));assertEquals(1,count("tickets"));assertEquals(361,count("flights"));
     }
     @Test void featureFlagsAndBudgetBlockWrites() {
+        properties.setMaxFlightsPerDay(13);
+        assertThrows(IllegalStateException.class,safety::assertSafe);
+        properties.setMaxFlightsPerDay(12);
         var denied=new DemoFlightConfiguration(properties,new org.springframework.mock.env.MockEnvironment()
                 .withProperty("spring.datasource.url",properties.getAllowedJdbcUrl()));
         assertThrows(IllegalStateException.class,denied::assertSafe);

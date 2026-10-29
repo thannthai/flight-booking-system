@@ -13,7 +13,7 @@ public class DemoFlightProperties {
     private String allowedJdbcUrl = "";
     private int windowDays = 30;
     private long intervalMs = 3600000;
-    private int maxFlightsPerDay = 10;
+    private int maxFlightsPerDay = 12;
     private int maxWindowSeats = 90000;
     private List<Schedule> schedules = new ArrayList<>();
     @Data public static class Schedule {

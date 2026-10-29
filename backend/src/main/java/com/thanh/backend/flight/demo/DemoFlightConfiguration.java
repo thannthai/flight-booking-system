@@ -25,7 +25,7 @@ public class DemoFlightConfiguration {
             throw new IllegalStateException("Demo generator disabled or target environment not allowed");
         }
         if (properties.getWindowDays() != 30 || properties.getMaxFlightsPerDay() < 2
-                || properties.getMaxFlightsPerDay() > 10 || properties.getMaxWindowSeats() < 180
+                || properties.getMaxFlightsPerDay() > 12 || properties.getMaxWindowSeats() < 180
                 || properties.getMaxWindowSeats() > 90000 || properties.getIntervalMs() < 60000) {
             throw new IllegalStateException("Unsafe demo generation limits");
         }

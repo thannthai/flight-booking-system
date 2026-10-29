@@ -51,14 +51,18 @@ public class DemoFlightTemplates {
         var schedule = p.getSchedules().stream().filter(s -> !s.getValidFrom().isAfter(date)).reduce((a,b) -> b).orElse(null);
         if (schedule == null) return List.of();
         var roster = schedule.getAirlines();
-        int count = Math.min(p.getMaxFlightsPerDay() / 2, roster.size());
+        // Route-major order gives each configured airline a turn before a second route.
+        List<Pair> candidates = new ArrayList<>();
+        for (int route = 0; route < 2; route++) {
+            for (var airline : roster) candidates.add(new Pair(airline, airline.getRoutes().get(route), date));
+        }
+        int count = Math.min(p.getMaxFlightsPerDay() / 2, candidates.size());
         long day = java.time.temporal.ChronoUnit.DAYS.between(schedule.getValidFrom(), date);
         List<Pair> result = new ArrayList<>();
+        // All routes run daily when budget permits; larger rosters rotate deterministically.
+        long start = candidates.size() <= count ? 0 : day * count;
         for (int i = 0; i < count; i++) {
-            long turn = day * count + i;
-            var airline = roster.get((int) Math.floorMod(turn, roster.size()));
-            var route = airline.getRoutes().get((int) (Math.floorDiv(turn, roster.size()) % 2));
-            result.add(new Pair(airline, route, date));
+            result.add(candidates.get((int) Math.floorMod(start + i, candidates.size())));
         }
         return result;
     }
