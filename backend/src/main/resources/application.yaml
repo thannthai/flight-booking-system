@@ -15,6 +15,8 @@ management:
       show-components: never
 
 spring:
+  config:
+    import: classpath:demo-flight-templates.yaml
   application:
     name: backend
 
@@ -61,6 +63,13 @@ cookie:
   secure: false
 
 app:
+  demo-flights:
+    enabled: ${DEMO_FLIGHTS_ENABLED:false}
+    allowed-jdbc-url: ${DEMO_FLIGHTS_ALLOWED_JDBC_URL:}
+    window-days: ${DEMO_FLIGHTS_WINDOW_DAYS:30}
+    interval-ms: ${DEMO_FLIGHTS_INTERVAL_MS:3600000}
+    max-flights-per-day: ${DEMO_FLIGHTS_MAX_FLIGHTS_PER_DAY:10}
+    max-window-seats: ${DEMO_FLIGHTS_MAX_WINDOW_SEATS:90000}
   booking:
     hold-ttl-seconds: 900
 

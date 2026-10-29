@@ -8,8 +8,6 @@ import com.thanh.backend.booking.repository.BookingRepository;
 import com.thanh.backend.booking.repository.TicketRepository;
 import com.thanh.backend.common.exception.AppException;
 import com.thanh.backend.common.exception.ErrorCode;
-import com.thanh.backend.flight.entity.FlightSeat;
-import com.thanh.backend.flight.enums.SeatStatus;
 import com.thanh.backend.flight.repository.FlightSeatRepository;
 import com.thanh.backend.payment.config.PayOSProperties;
 import com.thanh.backend.payment.dto.response.PaymentResponse;
@@ -22,6 +20,9 @@ import com.thanh.backend.payment.mapper.PaymentMapper;
 import com.thanh.backend.payment.repository.PaymentRepository;
 import com.thanh.backend.payment.service.PayOSGatewayService;
 import com.thanh.backend.payment.service.PaymentService;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -34,6 +35,7 @@ import vn.payos.model.v2.paymentRequests.PaymentLinkStatus;
 import vn.payos.model.webhooks.Webhook;
 import vn.payos.model.webhooks.WebhookData;
 
+import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -58,6 +60,9 @@ public class PaymentServiceImpl implements PaymentService {
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactionTemplate;
 
+    @PersistenceContext
+    private EntityManager entityManager;
+
     private static final DateTimeFormatter PAYOS_DATE_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private record Phase1Result(
@@ -81,6 +86,8 @@ public class PaymentServiceImpl implements PaymentService {
             // 1. Pessimistic lock Booking (Thứ tự khóa: Booking -> Payment)
             Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                     .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
+
+            entityManager.refresh(booking, LockModeType.PESSIMISTIC_WRITE);
 
             // 2. Kiểm tra quyền sở hữu (IDOR)
             if (!booking.getUser().getId().equals(currentUserId)) {
@@ -146,10 +153,12 @@ public class PaymentServiceImpl implements PaymentService {
         // =========================================================================
         return transactionTemplate.execute(status -> {
             // Lock theo đúng thứ tự toàn cục: Booking -> Payment
-            bookingRepository.findByIdForUpdate(phase1.booking().getId());
+            Booking booking = bookingRepository.findByIdForUpdate(phase1.booking().getId()).orElseThrow();
+            entityManager.refresh(booking, LockModeType.PESSIMISTIC_WRITE);
             Payment payment = paymentRepository.findByIdForUpdate(phase1.payment().getId())
                     .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
 
+            entityManager.refresh(payment, LockModeType.PESSIMISTIC_WRITE);
             if (payment.getStatus() == PaymentStatus.PENDING) {
                 payment.setPaymentUrl(result.checkoutUrl());
                 payment.setQrCode(result.qrCode());
@@ -180,7 +189,7 @@ public class PaymentServiceImpl implements PaymentService {
             }
         }
 
-        long safeAmount = phase1.payment().getAmount().setScale(0, RoundingMode.HALF_UP).longValue();
+        long safeAmount = payableVnd(phase1.payment().getAmount());
 
         CreatePaymentLinkRequest request = CreatePaymentLinkRequest.builder()
                 .orderCode(phase1.payment().getOrderCode())
@@ -234,12 +243,24 @@ public class PaymentServiceImpl implements PaymentService {
                     .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
             Payment lockedPayment = paymentRepository.findByIdForUpdate(payment.getId())
                     .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+            entityManager.refresh(booking, LockModeType.PESSIMISTIC_WRITE);
+            entityManager.refresh(lockedPayment, LockModeType.PESSIMISTIC_WRITE);
 
             // Kiểm tra IDOR
             if (!booking.getUser().getId().equals(currentUserId)) {
                 throw new AppException(ErrorCode.UNAUTHORIZED_BOOKING_ACCESS);
             }
 
+            // Repeated/legacy cancellation must never revisit released ticket allocations.
+            if (booking.getStatus() == BookingStatus.CANCELLED) {
+                if (lockedPayment.getStatus() == PaymentStatus.PENDING) {
+                    lockedPayment.setStatus(PaymentStatus.CANCELLED);
+                }
+                return lockedPayment;
+            }
+            if (booking.getStatus() != BookingStatus.PENDING) {
+                throw new AppException(ErrorCode.BOOKING_STATUS_INVALID);
+            }
             // Chỉ cho phép hủy khi đang PENDING
             if (lockedPayment.getStatus() != PaymentStatus.PENDING) {
                 throw new AppException(ErrorCode.PAYMENT_STATUS_INVALID);
@@ -260,24 +281,23 @@ public class PaymentServiceImpl implements PaymentService {
             // Giải phóng vé và ghế
             List<Ticket> tickets = ticketRepository.findByBookingId(booking.getId());
             for (Ticket ticket : tickets) {
+                if (ticket.getStatus() == TicketStatus.PENDING && ticket.getFlightSeat() != null) {
+                    flightSeatRepository.releaseBookedSeatForCancellation(ticket.getFlightSeat().getId(), booking.getId());
+                }
                 ticket.setStatus(TicketStatus.CANCELLED);
                 ticketRepository.save(ticket);
-
-                if (ticket.getFlightSeat() != null) {
-                    FlightSeat seat = ticket.getFlightSeat();
-                    seat.setStatus(SeatStatus.AVAILABLE);
-                    seat.setHeldUntil(null);
-                    seat.setHeldByUser(null);
-                    flightSeatRepository.save(seat);
-                }
             }
 
             return lockedPayment;
         });
 
-        if (cancelledPayment != null) {
+        if (cancelledPayment != null && cancelledPayment.getStatus() == PaymentStatus.CANCELLED) {
             // Sau khi commit DB, gửi request hủy link sang payOS bất đồng bộ
-            payOSGatewayService.cancelPaymentLinkAsync(cancelledPayment.getOrderCode(), "User cancelled payment");
+            try {
+                payOSGatewayService.cancelPaymentLinkAsync(cancelledPayment.getOrderCode(), "User cancelled payment");
+            } catch (RuntimeException error) {
+                log.warn("Provider cancellation deferred, paymentId={}", cancelledPayment.getId());
+            }
         }
 
         return paymentMapper.toResponse(cancelledPayment);
@@ -313,10 +333,16 @@ public class PaymentServiceImpl implements PaymentService {
                     .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
             Payment lockedPayment = paymentRepository.findByIdForUpdate(payment.getId())
                     .orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+            entityManager.refresh(booking, LockModeType.PESSIMISTIC_WRITE);
+            entityManager.refresh(lockedPayment, LockModeType.PESSIMISTIC_WRITE);
 
-            // Kiểm tra Idempotency: nếu đã SUCCESS thì coi như duplicate webhook -> bỏ qua
-            if (lockedPayment.getStatus() == PaymentStatus.SUCCESS) {
-                log.info("Payment with orderCode {} is already SUCCESS. Ignoring duplicate webhook.", data.getOrderCode());
+            // A recorded receipt/refund decision is terminal for webhook processing.
+            // Replays must preserve the original reference, paidAt and refund result.
+            // CANCELLED/EXPIRED with NONE may still record their first late receipt.
+            if (lockedPayment.getStatus() == PaymentStatus.SUCCESS
+                    || lockedPayment.getStatus() == PaymentStatus.PAID_AFTER_TERMINAL
+                    || lockedPayment.getRefundStatus() != RefundStatus.NONE) {
+                log.info("Payment {} already has a recorded receipt/refund result; ignoring webhook", lockedPayment.getId());
                 return;
             }
 
@@ -326,9 +352,10 @@ public class PaymentServiceImpl implements PaymentService {
             boolean isOnTime = !transTime.isAfter(booking.getPaymentDeadline());
             
             // XÁC MINH SỐ TIỀN: Bắt buộc số tiền chuyển khoản thực tế phải == số tiền cần thanh toán
-            boolean isAmountValid = data.getAmount() == lockedPayment.getAmount().longValue();
+            boolean isAmountValid = data.getAmount() == payableVnd(lockedPayment.getAmount());
 
-            if (lockedPayment.getStatus() == PaymentStatus.PENDING && isOnTime && isAmountValid) {
+            if (booking.getStatus() == BookingStatus.PENDING
+                    && lockedPayment.getStatus() == PaymentStatus.PENDING && isOnTime && isAmountValid) {
                 // Thanh toán thành công đúng hạn
                 lockedPayment.setStatus(PaymentStatus.SUCCESS);
                 lockedPayment.setProviderTxnId(data.getReference());
@@ -372,6 +399,12 @@ public class PaymentServiceImpl implements PaymentService {
         if (successEventHolder[0] != null) {
             eventPublisher.publishEvent(successEventHolder[0]);
         }
+    }
+
+    // payOS accepts integer VND. Preserve the existing outbound HALF_UP contract
+    // for both new and legacy decimal payment snapshots; do not change fare totals.
+    private static long payableVnd(BigDecimal amount) {
+        return amount.setScale(0, RoundingMode.HALF_UP).longValueExact();
     }
 
     private OffsetDateTime parseTransactionDateTime(String transactionDateTimeStr) {

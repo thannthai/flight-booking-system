@@ -64,4 +64,18 @@ public interface FlightSeatRepository extends JpaRepository<FlightSeat, Long> {
             FROM flight_seats WHERE id = :seatId FOR UPDATE NOWAIT
             """, nativeQuery = true)
     Boolean hasLiveHoldForLeaseCleanup(@Param("seatId") Long seatId);
+    // Release only the cancelling booking's pending allocation. Never free a
+    // newer booking's seat or mutate a HELD lease (including Redis generations).
+    @Modifying
+    @Query(value = """
+            UPDATE flight_seats s SET status = 'AVAILABLE', held_until = NULL, held_by_user = NULL
+            WHERE s.id = :seatId AND s.status = 'BOOKED'
+              AND EXISTS (SELECT 1 FROM tickets t WHERE t.flight_seat_id = s.id
+                          AND t.booking_id = :bookingId AND t.status = 'PENDING')
+              AND NOT EXISTS (SELECT 1 FROM tickets t JOIN booking b ON b.id = t.booking_id
+                              WHERE t.flight_seat_id = s.id AND t.booking_id <> :bookingId
+                                AND t.status IN ('PENDING', 'ISSUED')
+                                AND b.status IN ('PENDING', 'COMPLETED'))
+            """, nativeQuery = true)
+    int releaseBookedSeatForCancellation(@Param("seatId") Long seatId, @Param("bookingId") Long bookingId);
 }

@@ -1,0 +1,65 @@
+app:
+  demo-flights:
+    schedules:
+      - valid-from: 2026-01-01
+        airlines:
+          - code: VN
+            aircraft: [VN-A321]
+            fallback: true
+            routes:
+              - outbound-slot: "01"
+                return-slot: "02"
+                origin: SGN
+                destination: HAN
+                departure: "07:00"
+                duration-minutes: 130
+                turnaround-minutes: 80
+                price: 1500000
+              - outbound-slot: "03"
+                return-slot: "04"
+                origin: SGN
+                destination: SIN
+                departure: "09:00"
+                duration-minutes: 125
+                turnaround-minutes: 80
+                price: 2500000
+          - code: VJ
+            aircraft: [VJ-A320]
+            fallback: true
+            routes:
+              - outbound-slot: "05"
+                return-slot: "06"
+                origin: SGN
+                destination: DAD
+                departure: "08:00"
+                duration-minutes: 80
+                turnaround-minutes: 80
+                price: 1100000
+              - outbound-slot: "07"
+                return-slot: "08"
+                origin: SGN
+                destination: BKK
+                departure: "10:00"
+                duration-minutes: 90
+                turnaround-minutes: 80
+                price: 2200000
+          - code: QH
+            aircraft: [QH-B787]
+            fallback: true
+            routes:
+              - outbound-slot: "09"
+                return-slot: "0A"
+                origin: HAN
+                destination: DAD
+                departure: "09:00"
+                duration-minutes: 80
+                turnaround-minutes: 80
+                price: 1000000
+              - outbound-slot: "0B"
+                return-slot: "0C"
+                origin: HAN
+                destination: ICN
+                departure: "08:00"
+                duration-minutes: 260
+                turnaround-minutes: 80
+                price: 4500000

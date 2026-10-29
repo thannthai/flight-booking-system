@@ -45,9 +45,8 @@ public class FlightService {
     // Giả định cấu hình sơ đồ ghế mặc định cho MVP:
     // Business layout (2-2): A, C | D, F
     // Economy layout (3-3): A, B, C | D, E, F
-    private static final String[] BUSINESS_COLUMNS = {"A", "C", "D", "F"};
-    private static final String[] ECONOMY_COLUMNS = {"A", "B", "C", "D", "E", "F"};
 
+    private final FlightSeatLayoutFactory seatLayoutFactory;
     private final FlightRepository flightRepository;
     private final FlightSeatRepository flightSeatRepository;
     private final AirlineRepository airlineRepository;
@@ -68,6 +67,12 @@ public class FlightService {
             FlightStatus status,
             Pageable pageable
     ) {
+        return searchFlights(origin, destination, departureDate, status, pageable, false);
+    }
+
+    @Transactional(readOnly = true)
+    public Page<FlightResponse> searchFlights(String origin, String destination, LocalDate departureDate,
+                                              FlightStatus status, Pageable pageable, boolean upcomingOnly) {
         String sanitizedOrigin = StringUtils.hasText(origin) ? origin.trim() : null;
         String sanitizedDest = StringUtils.hasText(destination) ? destination.trim() : null;
 
@@ -90,7 +95,7 @@ public class FlightService {
             endOfDay = departureDate.atTime(LocalTime.MAX).atZone(zone).toOffsetDateTime();
         }
 
-        return flightRepository.searchFlights(sanitizedOrigin, sanitizedDest, startOfDay, endOfDay, status, pageable)
+        return flightRepository.searchFlights(sanitizedOrigin, sanitizedDest, startOfDay, endOfDay, status, upcomingOnly, pageable)
                 .map(flightMapper::toResponse);
     }
 
@@ -266,54 +271,7 @@ public class FlightService {
      * - Khoang Economy (3-3): Cột A, B, C | D, E, F (Hệ số giá: 1.0 x basePrice)
      */
     private void generateSeatsForFlight(Flight flight, Aircraft aircraft, BigDecimal basePrice) {
-        List<FlightSeat> seats = new ArrayList<>();
-
-        int businessCount = aircraft.getBusinessSeats() != null ? aircraft.getBusinessSeats() : 0;
-        BigDecimal businessPrice = basePrice.multiply(new BigDecimal("2.5"));
-
-        int row = 1;
-        int colIndex = 0;
-
-        for (int i = 0; i < businessCount; i++) {
-            seats.add(FlightSeat.builder()
-                    .flight(flight)
-                    .seatNo(row + BUSINESS_COLUMNS[colIndex])
-                    .cabinClass(CabinClass.BUSINESS)
-                    .price(businessPrice)
-                    .status(SeatStatus.AVAILABLE)
-                    .build());
-
-            colIndex++;
-            if (colIndex >= BUSINESS_COLUMNS.length) {
-                colIndex = 0;
-                row++;
-            }
-        }
-
-        if (colIndex > 0) {
-            row++;
-        }
-
-        int economyCount = aircraft.getEconomySeats() != null ? aircraft.getEconomySeats() : 0;
-        colIndex = 0;
-
-        for (int i = 0; i < economyCount; i++) {
-            seats.add(FlightSeat.builder()
-                    .flight(flight)
-                    .seatNo(row + ECONOMY_COLUMNS[colIndex])
-                    .cabinClass(CabinClass.ECONOMY)
-                    .price(basePrice)
-                    .status(SeatStatus.AVAILABLE)
-                    .build());
-
-            colIndex++;
-            if (colIndex >= ECONOMY_COLUMNS.length) {
-                colIndex = 0;
-                row++;
-            }
-        }
-
-        flightSeatRepository.saveAll(seats);
+        flightSeatRepository.saveAll(seatLayoutFactory.create(flight, aircraft, basePrice));
     }
 
     /**

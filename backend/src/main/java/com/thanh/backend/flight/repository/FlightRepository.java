@@ -36,6 +36,7 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
               AND (cast(:startOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime >= :startOfDay)
               AND (cast(:endOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime <= :endOfDay)
               AND (:status IS NULL OR f.status = :status)
+              AND (:upcomingOnly = false OR f.departureTime > cast(function('clock_timestamp') as OffsetDateTime))
             """,
             countQuery = """
             SELECT COUNT(f) FROM Flight f
@@ -44,6 +45,7 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
               AND (cast(:startOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime >= :startOfDay)
               AND (cast(:endOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime <= :endOfDay)
               AND (:status IS NULL OR f.status = :status)
+              AND (:upcomingOnly = false OR f.departureTime > cast(function('clock_timestamp') as OffsetDateTime))
             """)
     Page<Flight> searchFlights(
             @Param("origin") String origin,
@@ -51,6 +53,7 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
             @Param("startOfDay") OffsetDateTime startOfDay,
             @Param("endOfDay") OffsetDateTime endOfDay,
             @Param("status") FlightStatus status,
+            @Param("upcomingOnly") boolean upcomingOnly,
             Pageable pageable
     );
 }

@@ -47,7 +47,7 @@ public class FlightController {
                 destination,
                 departureDate,
                 FlightStatus.SCHEDULED,
-                pageable
+                pageable, true
         );
         return ApiResponse.success("Flights retrieved successfully", PageResponse.of(flights));
     }

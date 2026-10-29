@@ -41,6 +41,15 @@ import com.thanh.backend.flight.enums.FlightStatus;
 import com.thanh.backend.flight.enums.SeatStatus;
 import com.thanh.backend.flight.repository.FlightRepository;
 import com.thanh.backend.flight.repository.FlightSeatRepository;
+import com.thanh.backend.payment.repository.PaymentRepository;
+import com.thanh.backend.payment.service.PayOSGatewayService;
+import com.thanh.backend.payment.enums.PaymentStatus;
+import jakarta.persistence.PersistenceContext;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
@@ -66,6 +75,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class BookingService {
@@ -88,6 +98,11 @@ public class BookingService {
     private final BookingMapper bookingMapper;
     private final SeatHoldLeaseStore leaseStore;
     private final SeatHoldTransactionLifecycle leaseLifecycle;
+
+    private final PaymentRepository paymentRepository;
+    private final PayOSGatewayService payOSGatewayService;
+    @PersistenceContext
+    private EntityManager entityManager;
 
     /**
      * Giữ ghế với deadline cố định 15 phút; retry không gia hạn.
@@ -892,9 +907,11 @@ public class BookingService {
      */
     @Transactional
     public void cancelBooking(User user, Long bookingId) {
-        Booking booking = bookingRepository.findById(bookingId)
+        Booking booking = bookingRepository.findByIdForUpdate(bookingId)
                 .orElseThrow(() -> new AppException(ErrorCode.BOOKING_NOT_FOUND));
 
+        // The HTTP persistence context may already contain an older snapshot.
+        entityManager.refresh(booking, LockModeType.PESSIMISTIC_WRITE);
         if (!booking.getUser().getId().equals(user.getId()) && user.getRole() != UserRole.ROLE_ADMIN) {
             throw new AppException(ErrorCode.UNAUTHORIZED_BOOKING_ACCESS);
         }
@@ -903,21 +920,38 @@ public class BookingService {
             throw new AppException(ErrorCode.BOOKING_STATUS_INVALID);
         }
 
+        paymentRepository.findByBookingIdAndStatus(bookingId,
+                PaymentStatus.PENDING).ifPresent(payment -> {
+            var locked = paymentRepository.findByIdForUpdate(payment.getId()).orElseThrow();
+            entityManager.refresh(locked, LockModeType.PESSIMISTIC_WRITE);
+            if (locked.getStatus() == PaymentStatus.PENDING) {
+                locked.setStatus(PaymentStatus.CANCELLED);
+                TransactionSynchronizationManager.registerSynchronization(
+                        new TransactionSynchronization() {
+                            @Override
+                            public void afterCommit() {
+                                try {
+                                    payOSGatewayService.cancelPaymentLinkAsync(locked.getOrderCode(), "Booking cancelled");
+                                } catch (RuntimeException error) {
+                                    log.warn("Provider cancellation deferred, paymentId={}", locked.getId());
+                                }
+                            }
+                        });
+            }
+        });
+        booking.setCancelledAt(OffsetDateTime.now(ZoneOffset.UTC));
+        booking.setCancelledBy(user.getId());
+        booking.setCancelReason("User cancelled booking");
         booking.setStatus(BookingStatus.CANCELLED);
         bookingRepository.save(booking);
 
         List<Ticket> tickets = ticketRepository.findByBookingId(bookingId);
         for (Ticket ticket : tickets) {
+            if (ticket.getStatus() == TicketStatus.PENDING && ticket.getFlightSeat() != null) {
+                flightSeatRepository.releaseBookedSeatForCancellation(ticket.getFlightSeat().getId(), bookingId);
+            }
             ticket.setStatus(TicketStatus.CANCELLED);
             ticketRepository.save(ticket);
-
-            if (ticket.getFlightSeat() != null) {
-                ticket.getFlightSeat().setStatus(SeatStatus.AVAILABLE);
-                flightSeatRepository.save(ticket.getFlightSeat());
-                
-                // Creation schedules exact-token cleanup after commit. This cancel operation
-                // has no captured identity authorizing deletion of a current Redis key.
-            }
         }
     }
 }

@@ -102,6 +102,8 @@ class PaymentServiceImplTest {
                 transactionTemplate
         );
 
+        ReflectionTestUtils.setField(paymentService, "entityManager", org.mockito.Mockito.mock(jakarta.persistence.EntityManager.class));
+
         testUser = User.builder().email("user@example.com").build();
         ReflectionTestUtils.setField(testUser, "id", 100L);
 
@@ -390,11 +392,7 @@ class PaymentServiceImplTest {
         assertEquals(PaymentStatus.CANCELLED, actualResponse.getStatus());
         assertEquals(BookingStatus.CANCELLED, testBooking.getStatus());
         assertEquals(TicketStatus.CANCELLED, ticket.getStatus());
-        assertEquals(SeatStatus.AVAILABLE, seat.getStatus());
-        assertNull(seat.getHeldUntil());
-        assertNull(seat.getHeldByUser());
-
-        verify(flightSeatRepository).save(seat);
+        verify(flightSeatRepository).releaseBookedSeatForCancellation(77L, 1L);
         verify(payOSGatewayService).cancelPaymentLinkAsync(1000000001L, "User cancelled payment");
     }
 }

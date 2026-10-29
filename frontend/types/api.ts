@@ -54,7 +54,7 @@ export type SeatStatus = "AVAILABLE" | "HELD" | "BOOKED";
 
 export type FlightStatus = "SCHEDULED" | "DELAYED" | "CANCELLED" | "COMPLETED";
 
-export type FlightSource = "MANUAL" | "CRAWLER";
+export type FlightSource = "MANUAL" | "DEMO";
 
 // ---------------------------------------------------------------------------
 // Enums — Booking module
