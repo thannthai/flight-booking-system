@@ -1,0 +1,9 @@
+# Copy to frontend/.env.local for development. Browser API stays first-party.
+NEXT_PUBLIC_API_URL=/api/v1
+BACKEND_API_URL=http://localhost:8080/api/v1
+# Production: use an HTTPS backend API base ending in /api/v1.
+# Configure these existing BACKEND settings on hosting:
+# COOKIE_SECURE=true
+# CORS_ALLOWED_ORIGINS=https://<frontend-host>
+# PAYOS_RETURN_URL=https://<frontend-host>/payment/success
+# PAYOS_CANCEL_URL=https://<frontend-host>/payment/cancel

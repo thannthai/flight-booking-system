@@ -1,171 +1,78 @@
 'use client'
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react'
-import { api, getAccessToken, getCurrentUser, isTokenExpired, refreshAccessToken } from '@/lib/api'
-import type { UserResponse, LoginRequest, RegisterRequest, AuthResponse } from '@/types/api'
+import { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { api, getAuthState, getServerAuthState, subscribeAuth, isTokenExpired, refreshAccessToken, invalidateAuth } from '@/lib/api'
+import type { AuthResponse, LoginRequest, RegisterRequest, UserResponse } from '@/types/api'
 
 interface AuthContextType {
   user: UserResponse | null
   token: string | null
   isAuthenticated: boolean
   isLoading: boolean
+  authError: string | null
   isAuthModalOpen: boolean
   authModalMode: 'login' | 'register'
-  login: (req: LoginRequest) => Promise<AuthResponse>
-  register: (req: RegisterRequest) => Promise<AuthResponse>
+  login: (request: LoginRequest) => Promise<AuthResponse>
+  register: (request: RegisterRequest) => Promise<AuthResponse>
   logout: () => Promise<void>
   openAuthModal: (mode?: 'login' | 'register', onSuccess?: () => void) => void
   closeAuthModal: () => void
 }
-
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<UserResponse | null>(null)
-  const [token, setToken] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(true)
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false)
-  const [authModalMode, setAuthModalMode] = useState<'login' | 'register'>('login')
-  const [onSuccessCallback, setOnSuccessCallback] = useState<(() => void) | null>(null)
-
-  // Initialize auth state from storage on mount
+  const { token, user } = useSyncExternalStore(subscribeAuth, getAuthState, getServerAuthState)
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [isLoading, setLoading] = useState(true)
+  const [isAuthModalOpen, setOpen] = useState(false)
+  const [authModalMode, setMode] = useState<'login' | 'register'>('login')
+  const pending = useRef<(() => void) | null>(null)
   useEffect(() => {
-    async function initAuth() {
+    let active = true
+    // Remove legacy persisted tokens/user caches; cookie is the authority for restoring auth.
+    try { sessionStorage.removeItem('access_token'); localStorage.removeItem('skyway_user') } catch { /* Storage may be disabled. */ }
+    void refreshAccessToken().finally(() => { if (active) setLoading(false) })
+    const unauthorized = () => { pending.current = null; setMode('login'); setOpen(true) }
+    const storage = (event: StorageEvent) => {
+      if (event.key !== 'skyway_auth_changed' || !event.newValue) return
       try {
-        const storedUser = getCurrentUser()
-        const currentToken = getAccessToken()
-
-        if (currentToken && !isTokenExpired(currentToken)) {
-          setToken(currentToken)
-          setUser(storedUser)
-        } else {
-          // Token is missing or expired, attempt refresh via HttpOnly cookie
-          const newToken = await refreshAccessToken()
-          if (newToken) {
-            setToken(newToken)
-            setUser(getCurrentUser())
-          } else {
-            setToken(null)
-            setUser(null)
-          }
-        }
-      } catch (err) {
-        console.warn('Auth initialization error:', err)
-      } finally {
-        setIsLoading(false)
-      }
+        const action = JSON.parse(event.newValue).action
+        pending.current = null
+        invalidateAuth(action !== 'signin')
+        if (action === 'signin') void refreshAccessToken()
+      } catch { invalidateAuth(true) }
     }
-
-    initAuth()
+    window.addEventListener('skyway:unauthorized', unauthorized)
+    window.addEventListener('storage', storage)
+    return () => { active = false; window.removeEventListener('skyway:unauthorized', unauthorized); window.removeEventListener('storage', storage) }
   }, [])
-
-  // Listen for 401 unauthorized events from api.ts
   useEffect(() => {
-    const handleUnauthorized = () => {
-      setUser(null)
-      setToken(null)
-      setIsAuthModalOpen(true)
-      setAuthModalMode('login')
-    }
-
-    window.addEventListener('skyway:unauthorized', handleUnauthorized)
-    return () => window.removeEventListener('skyway:unauthorized', handleUnauthorized)
+    if (!token) return
+    const timer = setInterval(() => { if (isTokenExpired(token)) void refreshAccessToken() }, 10000)
+    return () => clearInterval(timer)
+  }, [token])
+  const openAuthModal = useCallback((mode: 'login' | 'register' = 'login', action?: () => void) => {
+    pending.current = action || null
+    setMode(mode)
+    setOpen(true)
   }, [])
-
-  const openAuthModal = useCallback((mode: 'login' | 'register' = 'login', onSuccess?: () => void) => {
-    setAuthModalMode(mode)
-    if (onSuccess) {
-      setOnSuccessCallback(() => onSuccess)
-    } else {
-      setOnSuccessCallback(null)
-    }
-    setIsAuthModalOpen(true)
-  }, [])
-
-  const closeAuthModal = useCallback(() => {
-    setIsAuthModalOpen(false)
-    setOnSuccessCallback(null)
-  }, [])
-
-  const login = useCallback(async (req: LoginRequest): Promise<AuthResponse> => {
-    setIsLoading(true)
+  const closeAuthModal = useCallback(() => { setOpen(false); pending.current = null }, [])
+  const finishAuth = async (request: Promise<AuthResponse>) => {
     try {
-      const res = await api.login(req)
-      setToken(res.accessToken)
-      setUser(res.user)
-      setIsAuthModalOpen(false)
-      
-      // If there was a pending action waiting for login (e.g. hold seats)
-      if (onSuccessCallback) {
-        setTimeout(() => {
-          onSuccessCallback()
-          setOnSuccessCallback(null)
-        }, 100)
-      }
-      return res
-    } finally {
-      setIsLoading(false)
-    }
-  }, [onSuccessCallback])
-
-  const register = useCallback(async (req: RegisterRequest): Promise<AuthResponse> => {
-    setIsLoading(true)
-    try {
-      const res = await api.register(req)
-      setToken(res.accessToken)
-      setUser(res.user)
-      setIsAuthModalOpen(false)
-      
-      if (onSuccessCallback) {
-        setTimeout(() => {
-          onSuccessCallback()
-          setOnSuccessCallback(null)
-        }, 100)
-      }
-      return res
-    } finally {
-      setIsLoading(false)
-    }
-  }, [onSuccessCallback])
-
-  const logout = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      await api.logout()
-    } finally {
-      setToken(null)
-      setUser(null)
-      setIsLoading(false)
-    }
-  }, [])
-
-  const isAuthenticated = !!user && !!token && !isTokenExpired(token)
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        token,
-        isAuthenticated,
-        isLoading,
-        isAuthModalOpen,
-        authModalMode,
-        login,
-        register,
-        logout,
-        openAuthModal,
-        closeAuthModal,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  )
-}
-
-export function useAuth(): AuthContextType {
-  const context = useContext(AuthContext)
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider')
+      const result = await request
+      setOpen(false)
+      setAuthError(null)
+      const action = pending.current
+      pending.current = null
+      action?.()
+      return result
+    } finally { setLoading(false) }
   }
+  return <AuthContext.Provider value={{ user, token, isAuthenticated: !!user && !!token && !isTokenExpired(token), isLoading, authError, isAuthModalOpen, authModalMode,
+    login: request => finishAuth(api.login(request)), register: request => finishAuth(api.register(request)),
+    logout: async () => { pending.current = null; setOpen(false); try { await api.logout() } catch (error) { setAuthError('Signed out locally. Server sign-out could not be confirmed; reconnect before signing in again.'); throw error } }, openAuthModal, closeAuthModal }}>{children}</AuthContext.Provider>
+}
+export function useAuth() {
+  const context = useContext(AuthContext)
+  if (!context) throw new Error('useAuth must be used within AuthProvider')
   return context
 }

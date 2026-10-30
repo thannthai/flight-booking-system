@@ -1,5 +1,6 @@
 'use client'
 
+import { useDialog } from '@/lib/use-dialog'
 import React, { useState, useEffect } from 'react'
 import { 
   X, 
@@ -14,9 +15,9 @@ import {
   User, 
   AlertCircle, 
   Loader2, 
-  Sparkles,
   ArrowLeft
 } from 'lucide-react'
+import { departureDate, passengerTypeAtDate, documentRemovalUnsupported } from '@/lib/passenger-validation'
 import { api } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import type { PassengerResponse, PassengerRequest, DocumentType, Gender, PassengerType } from '@/types/api'
@@ -25,6 +26,7 @@ interface PassengerDirectoryModalProps {
   isOpen: boolean
   onClose: () => void
   onSelectPassenger?: (passenger: PassengerResponse) => void
+  referenceDate?: string
   targetType?: 'Adult' | 'Child' | 'Infant'
 }
 
@@ -33,8 +35,10 @@ export function PassengerDirectoryModal({
   onClose,
   onSelectPassenger,
   targetType,
+  referenceDate,
 }: PassengerDirectoryModalProps) {
-  const { user, isAuthenticated } = useAuth()
+  const dialogRef = useDialog(isOpen, onClose)
+  const { isAuthenticated } = useAuth()
   const [passengers, setPassengers] = useState<PassengerResponse[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -48,7 +52,7 @@ export function PassengerDirectoryModal({
   const [dob, setDob] = useState('')
   const [gender, setGender] = useState<Gender>('MALE')
   const [nationality, setNationality] = useState('Vietnam')
-  const [paxType, setPaxType] = useState<PassengerType>('ADULT')
+  const [, setPaxType] = useState<PassengerType>('ADULT')
   const [idType, setIdType] = useState<DocumentType>('CITIZEN_ID')
   const [idNumber, setIdNumber] = useState('')
   const [idExpiry, setIdExpiry] = useState('')
@@ -84,16 +88,8 @@ export function PassengerDirectoryModal({
   // Calculate passenger category (Adult/Child/Infant) based on DOB
   const calculatePaxType = (dateOfBirth: string): 'Adult' | 'Child' | 'Infant' => {
     if (!dateOfBirth) return 'Adult'
-    const birth = new Date(dateOfBirth)
-    const now = new Date()
-    let age = now.getFullYear() - birth.getFullYear()
-    const m = now.getMonth() - birth.getMonth()
-    if (m < 0 || (m === 0 && now.getDate() < birth.getDate())) {
-      age--
-    }
-    if (age < 2) return 'Infant'
-    if (age < 12) return 'Child'
-    return 'Adult'
+    const type = passengerTypeAtDate(dateOfBirth, referenceDate || departureDate(new Date().toISOString()))
+    return type === 'INFANT' ? 'Infant' : type === 'CHILD' ? 'Child' : 'Adult'
   }
 
   const handleOpenAdd = () => {
@@ -146,13 +142,13 @@ export function PassengerDirectoryModal({
       return
     }
 
-    if (idType === 'CITIZEN_ID' && idNumber.trim() && !/^\d+$/.test(idNumber.trim())) {
-      setFormError('National ID must contain digits only.')
+    if (!passengerTypeAtDate(dob, referenceDate || departureDate(new Date().toISOString()))) {
+      setFormError('Enter a valid date of birth on or before the reference date.')
       return
     }
-
-    if (idType === 'PASSPORT' && idNumber.trim() && !idExpiry) {
-      setFormError('Please enter passport expiry date.')
+    const existing = passengers.find(p => p.id === editingId)
+    if (documentRemovalUnsupported(existing?.identityNumber, idNumber)) {
+      setFormError('Removing a document is not supported by the API. Keep or replace the number, or remove this traveler from your directory.')
       return
     }
 
@@ -176,8 +172,8 @@ export function PassengerDirectoryModal({
     setFormError(null)
     try {
       if (viewMode === 'edit' && editingId) {
-        const updated = await api.updatePassenger(editingId, payload)
-        setPassengers(prev => prev.map(p => p.id === editingId ? updated : p))
+        await api.updatePassenger(editingId, payload)
+        setPassengers(await api.getMyPassengers())
       } else {
         const created = await api.createPassenger(payload)
         setPassengers(prev => [created, ...prev])
@@ -204,6 +200,8 @@ export function PassengerDirectoryModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
+      ref={dialogRef}
+      aria-label="Saved Travelers"
       role="dialog"
       aria-modal="true"
     >
@@ -296,7 +294,7 @@ export function PassengerDirectoryModal({
                 <div className="space-y-3.5">
                   {filteredPassengers.length === 0 && targetType && (
                     <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium mb-3">
-                      No saved travelers matching age category <strong>{targetType}</strong>. You can click <strong>"Add Traveler"</strong> above to add one.
+                      No saved travelers matching age category <strong>{targetType}</strong>. You can click <strong>&quot;Add Traveler&quot;</strong> above to add one.
                     </div>
                   )}
 
@@ -496,7 +494,7 @@ export function PassengerDirectoryModal({
                       type="text"
                       placeholder={idType === 'PASSPORT' ? 'e.g. C1234567' : 'e.g. 079195001234'}
                       value={idNumber}
-                      onChange={(e) => setIdNumber(idType === 'CITIZEN_ID' ? e.target.value.replace(/\D/g, '') : e.target.value.toUpperCase())}
+                      onChange={(e) => setIdNumber(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2.5 pl-10 pr-4 text-sm font-mono text-slate-900 focus:border-[#102a56] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#102a56]/10"
                     />
                   </div>
@@ -505,11 +503,10 @@ export function PassengerDirectoryModal({
                 {idType === 'PASSPORT' && (
                   <div>
                     <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                      Passport Expiry Date <span className="text-red-500">*</span>
+                      Passport Expiry Date (optional)
                     </label>
                     <input
                       type="date"
-                      min={new Date().toISOString().split('T')[0]}
                       value={idExpiry}
                       onChange={(e) => setIdExpiry(e.target.value)}
                       className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-2.5 px-3 text-sm text-slate-900 focus:border-[#102a56] focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#102a56]/10 cursor-pointer"

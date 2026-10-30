@@ -1,27 +1,19 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { Plane, X, Check, ArrowRight, ArrowLeft, User, Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef } from 'react'
+import { Plane, Check, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatVND } from '@/lib/format'
-import { api } from '@/lib/api'
+import { assignSeats } from '@/lib/seats'
+import { api, ApiError, getAccessToken } from '@/lib/api'
 import { useAuth } from '@/lib/auth-context'
 import { UserNav } from '@/components/auth/UserNav'
 import type { FlightSeatMapResponse, FlightSeatResponse } from '@/types/api'
 
-type AdaptedFlight = {
-  id: number;
-  airline: string;
-  code: string;
-  logo: string;
-  tone: string;
-  depart: string;
-  arrive: string;
-  duration: string;
-  price: string;
-  aircraft: string;
-  badge: string;
-}
+import type { AdaptedFlight } from '@/lib/flight'
+import { priceBooking } from '@/lib/pricing'
+import { passengerType, type PassengerData } from '@/lib/checkout-model'
+import type { BookingResponse } from '@/types/api'
 
 function parseSeatMap(seats: FlightSeatResponse[]): [number, FlightSeatResponse[]][] {
   const rows = new Map<number, FlightSeatResponse[]>()
@@ -37,52 +29,40 @@ function parseSeatMap(seats: FlightSeatResponse[]): [number, FlightSeatResponse[
   return sortedRows
 }
 
-export function SeatSelection({ 
+export function SeatSelection(props: Omit<Parameters<typeof SeatSelectionForm>[0], 'flight' | 'passengerData'> & { flight: AdaptedFlight | null; passengerData: PassengerData | null }) {
+  if (!props.flight || !props.passengerData?.paxList) return <main className="p-8"><p>Choose a flight and enter passengers first.</p><Button onClick={props.onHome}>Start New Search</Button></main>
+  return <SeatSelectionForm {...props} flight={props.flight} passengerData={props.passengerData} />
+}
+
+function SeatSelectionForm({
   flight, 
   returnFlight,
   passengerData,
   bookingData,
+  cabinClass = 'ECONOMY',
   initialSeats = [],
   initialReturnSeats = [],
-  historicallySelectedSeats = [],
-  onSeatSelect,
   onBack, 
   onHome, 
   onContinue 
 }: { 
-  flight: AdaptedFlight | null; 
+  flight: AdaptedFlight;
   returnFlight?: AdaptedFlight | null;
-  passengerData: any;
-  bookingData?: any;
+  passengerData: PassengerData;
+  bookingData?: BookingResponse | null;
+  cabinClass?: 'ECONOMY' | 'BUSINESS';
   initialSeats?: (FlightSeatResponse | null)[];
   initialReturnSeats?: (FlightSeatResponse | null)[];
-  historicallySelectedSeats?: number[];
-  onSeatSelect?: (seatId: number) => void;
   onBack: () => void; 
   onHome: () => void; 
-  onContinue: (seats: FlightSeatResponse[], booking: any, returnSeats?: FlightSeatResponse[]) => void;
+  onContinue: (seats: FlightSeatResponse[], booking: BookingResponse | null, returnSeats?: FlightSeatResponse[], expiresAt?: string) => void;
 }) {
-  const { isAuthenticated, openAuthModal } = useAuth()
+  const { openAuthModal } = useAuth()
   
-  if (!flight || !passengerData || !passengerData.paxList) {
-    return (
-      <div className="min-h-screen bg-[#f7f8fa] flex flex-col items-center justify-center p-5">
-        <div className="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center max-w-md">
-          <Plane className="size-12 text-slate-300 mx-auto mb-4" />
-          <h2 className="text-xl font-bold text-slate-800 mb-2">Session Expired</h2>
-          <p className="text-slate-500 text-sm mb-6">Your booking session has expired or is invalid. Please start a new search.</p>
-          <Button onClick={onHome} className="w-full bg-[#102a56] hover:bg-[#1a3d75] rounded-xl h-12 font-bold">
-            Start New Search
-          </Button>
-        </div>
-      </div>
-    )
-  }
-
   // Filter out infants because they don't get seats
   const eligiblePax = passengerData.paxList
-    .map((p: any, i: number) => ({ ...p, name: passengerData.passengers[i].name, originalIndex: i }))
-    .filter((p: any) => p.type !== 'Infant')
+    .map((p, i) => ({ ...p, name: passengerData.passengers[i].name, originalIndex: i }))
+    .filter((p) => p.type !== 'Infant')
 
   // Dual-leg selection state
   const [activeLeg, setActiveLeg] = useState<'outbound' | 'return'>('outbound')
@@ -98,6 +78,9 @@ export function SeatSelection({
   const [returnSeatMap, setReturnSeatMap] = useState<[number, FlightSeatResponse[]][]>([])
   const [loading, setLoading] = useState(true)
   const [holding, setHolding] = useState(false)
+  const inFlight = useRef(false)
+  const [seatReload, setSeatReload] = useState(0)
+  const [seatLoadError, setSeatLoadError] = useState(false)
   const [holdError, setHoldError] = useState<string | null>(null)
 
   const currentFlight = (activeLeg === 'return' && returnFlight) ? returnFlight : flight
@@ -113,98 +96,61 @@ export function SeatSelection({
 
   // Fetch seat map(s)
   useEffect(() => {
+    let active = true
     setLoading(true)
+    setSeatLoadError(false)
     const fetchPromises = [
       api.get<FlightSeatMapResponse>(`/flights/${flight.id}/seats`).then(res => {
+        if (!active) return
         setOutboundSeatMap(parseSeatMap(res.seats))
+        setOutboundSeats(old => old.map(s => res.seats.find(latest => latest.id === s?.id && latest.status !== 'BOOKED' && latest.cabinClass === cabinClass) || null))
       })
     ]
 
     if (returnFlight) {
       fetchPromises.push(
         api.get<FlightSeatMapResponse>(`/flights/${returnFlight.id}/seats`).then(res => {
+          if (!active) return
           setReturnSeatMap(parseSeatMap(res.seats))
+          setReturnSeats(old => old.map(s => res.seats.find(latest => latest.id === s?.id && latest.status !== 'BOOKED' && latest.cabinClass === cabinClass) || null))
         })
       )
     }
 
     Promise.all(fetchPromises)
-      .catch(err => {
-        console.error('Failed to load seats', err)
+      .catch(() => {
+        if (active) setSeatLoadError(true)
       })
       .finally(() => {
-        setLoading(false)
+        if (active) setLoading(false)
       })
-  }, [flight.id, returnFlight?.id])
+    return () => { active = false }
+  }, [flight.id, returnFlight?.id, seatReload, cabinClass])
 
   const toggleSeat = (seat: FlightSeatResponse) => {
     const isAlreadySelected = currentSeats.some(s => s?.id === seat.id)
-    const activeInitialSeats = activeLeg === 'return' ? initialReturnSeats : initialSeats
-    const isHeldByMe = historicallySelectedSeats.includes(seat.id) || activeInitialSeats.some(s => s?.id === seat.id)
+    if (!isAlreadySelected && (seat.status !== 'AVAILABLE' || seat.cabinClass !== cabinClass)) return
     
-    if (!isAlreadySelected && !isHeldByMe && seat.status !== 'AVAILABLE') return
-    
-    if (onSeatSelect) {
-      onSeatSelect(seat.id)
-    }
-    
-    setCurrentSeats(current => {
-      const newSeats = [...current]
-      const existingOwnerIndex = newSeats.findIndex(s => s?.id === seat.id)
-      if (existingOwnerIndex !== -1) {
-        newSeats[existingOwnerIndex] = null
-        return newSeats
-      }
-      newSeats[activePaxIndex] = seat
-      return newSeats
-    })
-
-    // Auto-advance to next unassigned passenger
-    setTimeout(() => {
-      setCurrentSeats(latestSeats => {
-        const nextUnassigned = latestSeats.findIndex(s => s === null)
-        if (nextUnassigned !== -1) {
-          setActivePaxIndex(nextUnassigned)
-        }
-        return latestSeats
-      })
-    }, 50)
+    const next = [...currentSeats]
+    const existing = next.findIndex(s => s?.id === seat.id)
+    if (existing !== -1) next[existing] = null
+    else next[activePaxIndex] = seat
+    setCurrentSeats(() => next)
+    const unassigned = next.findIndex(s => s === null)
+    if (unassigned !== -1) setActivePaxIndex(unassigned)
   }
 
   const isAllSeatsSelected = outboundSeats.every(s => s !== null) && (!returnFlight || returnSeats.every(s => s !== null))
 
   const handleAutoAssign = () => {
-    const assignAvailable = (map: [number, FlightSeatResponse[]][], currentList: (FlightSeatResponse | null)[]) => {
-      const available: FlightSeatResponse[] = []
-      map.forEach(([_, rowSeats]) => {
-        rowSeats.forEach(s => {
-          const isAssigned = currentList.some(sel => sel?.id === s.id)
-          const isCandidate = (s.status === 'AVAILABLE' || historicallySelectedSeats.includes(s.id)) && !isAssigned
-          if (isCandidate) available.push(s)
-        })
-      })
-      const res = [...currentList]
-      let idx = 0
-      for (let i = 0; i < eligiblePax.length; i++) {
-        if (!res[i] && idx < available.length) {
-          res[i] = available[idx++]
-          if (onSeatSelect) onSeatSelect(res[i]!.id)
-        }
-      }
-      return res
-    }
-
-    const newOutbound = assignAvailable(outboundSeatMap, outboundSeats)
-    setOutboundSeats(newOutbound)
-
-    if (returnFlight) {
-      const newReturn = assignAvailable(returnSeatMap, returnSeats)
-      setReturnSeats(newReturn)
-    }
+    setOutboundSeats(assignSeats(outboundSeatMap.flatMap(([, seats]) => seats), outboundSeats, cabinClass))
+    if (returnFlight) setReturnSeats(assignSeats(returnSeatMap.flatMap(([, seats]) => seats), returnSeats, cabinClass))
   }
   
+
   const handleContinue = async () => {
-    if (!isAuthenticated) {
+    if (inFlight.current) return
+    if (!getAccessToken()) {
       openAuthModal('login', () => {
         handleContinue()
       })
@@ -230,6 +176,7 @@ export function SeatSelection({
       return
     }
 
+    inFlight.current = true
     setHolding(true)
     setHoldError(null)
     
@@ -238,19 +185,14 @@ export function SeatSelection({
         ...outboundSeats.map(s => s!.id),
         ...(returnFlight ? returnSeats.map(s => s!.id) : [])
       ]
-      await api.post<any>('/bookings/hold-seats', { seatIds })
+      const hold = await api.post<import('@/types/api').HoldSeatsResponse>('/bookings/hold-seats', { seatIds })
       
-      onContinue(outboundSeats as FlightSeatResponse[], null, returnFlight ? returnSeats as FlightSeatResponse[] : undefined)
-    } catch (err: any) {
+      onContinue(outboundSeats as FlightSeatResponse[], null, returnFlight ? returnSeats as FlightSeatResponse[] : undefined, hold.expiresAt)
+    } catch (err) {
       setHolding(false)
-      const msg = err.message || ''
+
       const isAuthIssue = 
-        err.status === 401 || 
-        err.errorCode === 'UNAUTHORIZED' || 
-        msg.toLowerCase().includes('jwt') || 
-        msg.toLowerCase().includes('unauthorized') ||
-        msg.toLowerCase().includes('expired') ||
-        msg.toLowerCase().includes('session')
+        err instanceof ApiError && (err.status === 401 || err.errorCode === 'UNAUTHORIZED')
 
       if (isAuthIssue) {
         setHoldError(null)
@@ -260,30 +202,21 @@ export function SeatSelection({
         return
       }
 
-      setHoldError(err.message || 'Failed to hold seats. Some seats may have just been reserved.')
-    }
+      setOutboundSeats(new Array(eligiblePax.length).fill(null))
+      setReturnSeats(new Array(eligiblePax.length).fill(null))
+      setSeatReload(n => n + 1)
+      setHoldError(err instanceof Error ? err.message : 'Failed to hold seats. Choose seats again from the updated map.')
+    } finally { inFlight.current = false; setHolding(false) }
   }
 
   // Price calculation
-  const outboundBasePrice = Number(flight.price.replace(/\D/g, ''))
-  const outboundSeatPrice = outboundSeats.reduce((sum, s) => {
-    if (!s) return sum;
-    return sum + Math.max(0, s.price - outboundBasePrice);
-  }, 0)
-
-  const returnBasePrice = returnFlight ? Number(returnFlight.price.replace(/\D/g, '')) : 0
-  const returnSeatPrice = returnFlight ? returnSeats.reduce((sum, s) => {
-    if (!s) return sum;
-    return sum + Math.max(0, s.price - returnBasePrice);
-  }, 0) : 0
-
-  const totalSeatPrice = outboundSeatPrice + returnSeatPrice
-
-  const finalTotal = (passengerData.pricing?.totalBaseFare || 0) + 
-                     (passengerData.pricing?.totalTaxes || 0) + 
-                     (passengerData.pricing?.addOnsTotal || 0) - 
-                     (passengerData.pricing?.discount || 0) + 
-                     totalSeatPrice
+  const outboundBasePrice = flight.basePrice
+  const returnBasePrice = returnFlight ? returnFlight.basePrice : 0
+  const passengerTypes = passengerData.paxList.map(p => passengerType(p.type))
+  const selectedPrices = (list: (FlightSeatResponse | null)[], base: number) => eligiblePax.map((p: { originalIndex: number }, i: number) => ({ passengerIndex: p.originalIndex, price: list[i]?.price ?? base }))
+  const estimate = priceBooking(returnFlight ? [flight.basePrice, returnFlight.basePrice] : [flight.basePrice], passengerTypes,
+    [...selectedPrices(outboundSeats, flight.basePrice), ...(returnFlight ? selectedPrices(returnSeats, returnFlight.basePrice) : [])], passengerData.passengerAddOns)
+  const finalTotal = estimate.totalAmount
 
   return (
     <main className="min-h-screen bg-[#f7f8fa] text-slate-950 pb-20">
@@ -494,9 +427,7 @@ export function SeatSelection({
                             {leftSeats.map(seat => {
                               const isSelected = currentSeats.some(s => s?.id === seat.id)
                               const isSelectedByActive = currentSeats[activePaxIndex]?.id === seat.id
-                              const isHeldByMe = historicallySelectedSeats.includes(seat.id) || 
-                                (activeLeg === 'return' ? initialReturnSeats : initialSeats).some(s => s?.id === seat.id)
-                              const isAvailable = (seat.status === 'AVAILABLE' || isHeldByMe) && !isSelected
+                              const isAvailable = seat.status === 'AVAILABLE' && seat.cabinClass === cabinClass && !isSelected
 
                               return (
                                 <button
@@ -533,9 +464,7 @@ export function SeatSelection({
                             {rightSeats.map(seat => {
                               const isSelected = currentSeats.some(s => s?.id === seat.id)
                               const isSelectedByActive = currentSeats[activePaxIndex]?.id === seat.id
-                              const isHeldByMe = historicallySelectedSeats.includes(seat.id) || 
-                                (activeLeg === 'return' ? initialReturnSeats : initialSeats).some(s => s?.id === seat.id)
-                              const isAvailable = (seat.status === 'AVAILABLE' || isHeldByMe) && !isSelected
+                              const isAvailable = seat.status === 'AVAILABLE' && seat.cabinClass === cabinClass && !isSelected
 
                               return (
                                 <button
@@ -583,12 +512,12 @@ export function SeatSelection({
         <aside className="h-fit rounded-3xl border border-slate-200 bg-white shadow-sm sticky top-[140px] overflow-hidden">
           <div className="bg-slate-50 p-6 border-b border-slate-100">
             <p className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">Seat assignments</p>
-            <h2 className="mt-1 text-2xl font-bold text-[#102a56]">Assign seats</h2>
+            <h2 className="mt-1 text-2xl font-bold text-[#102a56]">Assign {cabinClass.toLowerCase()} seats</h2>
           </div>
           
           <div className="p-4">
             <div className="flex flex-col gap-2 min-h-[120px] max-h-[360px] overflow-y-auto pr-2 [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:bg-slate-200 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-300 transition-colors">
-              {eligiblePax.map((pax: any, index: number) => {
+              {eligiblePax.map((pax, index) => {
                 const seat = currentSeats[index]
                 const otherLegSeat = activeLeg === 'outbound' ? returnSeats[index] : outboundSeats[index]
                 const isActive = activePaxIndex === index
@@ -651,9 +580,10 @@ export function SeatSelection({
 
             <div className="mt-6 pt-5 border-t border-slate-200">
               <div className="flex items-center justify-between mb-2">
-                <span className="font-bold text-slate-600">Total (with seats)</span>
+                <span className="font-bold text-slate-600">Estimated total (with seats)</span>
                 <strong className="text-2xl font-bold text-[#f59e0b] tabular-nums">{formatVND(finalTotal)}</strong>
               </div>
+              {seatLoadError && <p role="alert" className="text-sm text-red-700">Could not load seats. <button onClick={() => setSeatReload(n => n + 1)} className="underline">Retry</button></p>}
               {holdError && (
                 <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-600 rounded-xl text-sm font-medium">
                   {holdError}
@@ -667,11 +597,11 @@ export function SeatSelection({
                   className="w-full mt-4 rounded-xl border-dashed border-slate-300 py-5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer flex items-center justify-center gap-2"
                 >
                   <Sparkles className="size-4 text-[#f59e0b]" />
-                  Auto-assign Seats (Free)
+                  Auto-assign Seats (Lowest Available Fare)
                 </Button>
               )}
               <Button 
-                disabled={!isAllSeatsSelected || holding} 
+                disabled={!isAllSeatsSelected || holding || loading || seatLoadError}
                 onClick={handleContinue} 
                 className="w-full mt-3 rounded-xl bg-[#f59e0b] py-6 text-base font-bold text-[#102a56] shadow-md shadow-amber-500/20 hover:bg-[#d97706] disabled:opacity-50 disabled:shadow-none cursor-pointer"
               >

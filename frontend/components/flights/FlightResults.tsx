@@ -5,9 +5,10 @@ import { ArrowRight, Check, Filter, Luggage, Plane, PlaneTakeoff, PlaneLanding, 
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { api } from '@/lib/api'
-import { formatVND, formatTime, computeDuration } from '@/lib/format'
-import type { FlightResponse, PageResponse } from '@/types/api'
-import type { SearchParams } from '@/components/home-page'
+import { fetchAllPages } from '@/lib/search'
+import { formatVND, formatTime, formatDate, airportDate, airportHour, computeDuration } from '@/lib/format'
+import type { FlightResponse } from '@/types/api'
+import type { SearchParams } from '@/lib/checkout-model'
 import { UserNav } from '@/components/auth/UserNav'
 
 interface FlightResultsProps {
@@ -66,7 +67,7 @@ function FlightCard({
             </div>
           </div>
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-100">
-            Non-stop
+            {flight.source === 'DEMO' ? 'DEMO · Simulated flight' : 'Non-stop'}
           </span>
         </div>
 
@@ -74,10 +75,10 @@ function FlightCard({
         <div className="my-6 grid items-center gap-4 sm:grid-cols-[1fr_auto_1fr] sm:gap-6">
           <div>
             <p className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
-              {formatTime(flight.departureTime)}
+              {formatTime(flight.departureTime, flight.origin.timezone)}
             </p>
             <p className="text-xs font-semibold text-[#2563eb]">
-              {new Date(flight.departureTime).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+              {formatDate(flight.departureTime, 'en-GB', flight.origin.timezone)}
             </p>
             <p className="mt-1 text-sm font-medium text-slate-500">
               {flight.origin.iataCode} · {flight.origin.city}
@@ -97,10 +98,10 @@ function FlightCard({
 
           <div className="sm:text-right">
             <p className="text-2xl font-bold tracking-tight text-slate-900 tabular-nums">
-              {formatTime(flight.arrivalTime)}
+              {formatTime(flight.arrivalTime, flight.dest.timezone)}
             </p>
             <p className="text-xs font-semibold text-slate-400">
-              {new Date(flight.arrivalTime).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })}
+              {formatDate(flight.arrivalTime, 'en-GB', flight.dest.timezone)}
             </p>
             <p className="mt-1 text-sm font-medium text-slate-500">
               {flight.dest.iataCode} · {flight.dest.city}
@@ -118,7 +119,7 @@ function FlightCard({
               </span>
               <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-3 py-1.5 border border-slate-100">
                 <Utensils className="size-3.5 text-slate-600" />
-                Light meal
+                Meals available as add-ons
               </span>
             </div>
             <button 
@@ -134,7 +135,7 @@ function FlightCard({
               <p className="text-xl font-bold text-[#102a56] tabular-nums">
                 {formatVND(flight.basePrice)}
               </p>
-              <p className="text-[11px] text-slate-400">/ pax (taxes included)</p>
+              <p className="text-[11px] text-slate-400">/ adult base fare · tax & extras added later</p>
             </div>
             <Button
               type="button"
@@ -176,7 +177,7 @@ function FlightCard({
                     <div className="size-2 rounded-full bg-[#2563eb]" />
                   </div>
                   <div className="mb-6">
-                    <p className="text-xl font-bold text-slate-900 tabular-nums">{formatTime(flight.departureTime)}</p>
+                    <p className="text-xl font-bold text-slate-900 tabular-nums">{formatTime(flight.departureTime, flight.origin.timezone)}</p>
                     <p className="font-semibold text-slate-700 mt-1">{flight.origin.city} ({flight.origin.iataCode})</p>
                   </div>
                   
@@ -188,7 +189,7 @@ function FlightCard({
                     <div className="size-2 rounded-full bg-[#f59e0b]" />
                   </div>
                   <div className="">
-                    <p className="text-xl font-bold text-slate-900 tabular-nums">{formatTime(flight.arrivalTime)}</p>
+                    <p className="text-xl font-bold text-slate-900 tabular-nums">{formatTime(flight.arrivalTime, flight.dest.timezone)}</p>
                     <p className="font-semibold text-slate-700 mt-1">{flight.dest.city} ({flight.dest.iataCode})</p>
                   </div>
                 </div>
@@ -207,7 +208,7 @@ function FlightCard({
                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Amenities</h4>
                     <ul className="space-y-2.5 text-sm text-slate-700">
                       <li className="flex items-start gap-3"><Check className="size-4 text-emerald-500 mt-0.5" /> {flight.aircraft.model}</li>
-                      <li className="flex items-start gap-3"><Check className="size-4 text-emerald-500 mt-0.5" /> Standard legroom (29")</li>
+                      <li className="flex items-start gap-3"><Check className="size-4 text-emerald-500 mt-0.5" /> Standard legroom (29&quot;)</li>
                       <li className="flex items-start gap-3"><Check className="size-4 text-emerald-500 mt-0.5" /> In-flight meal available</li>
                     </ul>
                   </div>
@@ -237,11 +238,12 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
 
   const [flights, setFlights] = useState<FlightResponse[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectionError, setSelectionError] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   // Filters state
   const [selectedAirlines, setSelectedAirlines] = useState<string[]>([])
-  const [maxPrice, setMaxPrice] = useState<number>(5000000)
+  const [maxPrice, setMaxPrice] = useState<number | null>(null)
   const [selectedTimes, setSelectedTimes] = useState<string[]>([]) // Morning, Afternoon, Evening
 
   // Round-trip state
@@ -257,36 +259,36 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
   // Minimum allowed date boundary
   const minDateStr = useMemo(() => {
     const now = new Date()
-    const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const today = airportDate(now.toISOString(), isReturnLeg ? searchParams.destinationTimezone : searchParams.originTimezone)
     if (isReturnLeg && selectedOutbound) {
-      const outD = new Date(selectedOutbound.departureTime)
-      const outStr = `${outD.getFullYear()}-${String(outD.getMonth() + 1).padStart(2, '0')}-${String(outD.getDate()).padStart(2, '0')}`
+
+      const outStr = airportDate(selectedOutbound.departureTime, selectedOutbound.dest.timezone)
       return outStr > today ? outStr : today
     }
     return today
-  }, [isReturnLeg, selectedOutbound])
+  }, [isReturnLeg, selectedOutbound, searchParams.originTimezone, searchParams.destinationTimezone])
 
   // Generate future days starting from minDateStr (never in the past)
   const baseDateStr = isReturnLeg ? (searchParams.returnDate || searchParams.departureDate) : searchParams.departureDate
   const dateCarousel = useMemo(() => {
     const dates = []
-    const base = new Date(baseDateStr)
-    const minD = new Date(minDateStr)
+    const base = new Date(baseDateStr + 'T12:00:00Z')
+    const minD = new Date(minDateStr + 'T12:00:00Z')
     
     // Start up to 2 days before base, but never before minD
     const candidateStart = new Date(base)
-    candidateStart.setDate(candidateStart.getDate() - 2)
+    candidateStart.setUTCDate(candidateStart.getUTCDate() - 2)
     const startDate = candidateStart < minD ? minD : candidateStart
 
     for (let i = 0; i < 14; i++) {
       const d = new Date(startDate)
-      d.setDate(startDate.getDate() + i)
-      const dateString = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      d.setUTCDate(startDate.getUTCDate() + i)
+      const dateString = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
       if (dateString < minDateStr) continue
       
-      const weekday = d.toLocaleDateString('en-US', { weekday: 'short' })
-      const day = d.toLocaleDateString('en-US', { day: '2-digit' })
-      const month = d.toLocaleDateString('en-US', { month: 'short' }).substring(0, 3).toUpperCase()
+      const weekday = d.toLocaleDateString('en-US', { weekday: 'short', timeZone: 'UTC' })
+      const day = d.toLocaleDateString('en-US', { day: '2-digit', timeZone: 'UTC' })
+      const month = d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' }).substring(0, 3).toUpperCase()
       const formatted = `${weekday}, ${day} ${month}`
       dates.push({ date: dateString, label: formatted })
     }
@@ -307,9 +309,14 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
     }
   }, [isReturnLeg])
 
+  const [retrySearch, setRetrySearch] = useState(0)
+
   // Fetch flights from real backend API
   useEffect(() => {
+    let active = true
     setLoading(true)
+    setFlights([])
+    setSelectionError(null)
     setError(null)
 
     const origin = currentOrigin
@@ -317,38 +324,25 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
     const date = activeDate
 
     // Call Spring Boot search endpoint
-    const query = `/flights/search?origin=${origin}&destination=${dest}${date ? `&departureDate=${date}` : ''}`
+    const query = `/flights/search?origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(dest)}${date ? `&departureDate=${date}` : ''}`
 
-    api.get<PageResponse<FlightResponse>>(query)
-      .then(res => {
-        const data = res.content || []
-        setFlights(data)
-      })
-      .catch(err => {
-        console.error('Failed to search flights:', err)
-        setError('Could not load flights. Please try again.')
-      })
-      .finally(() => {
-        setLoading(false)
-      })
-  }, [currentOrigin, currentDest, activeDate])
+    fetchAllPages<FlightResponse>(query, api.get)
+      .then(data => { if (active) setFlights(data) })
+      .catch(() => { if (active) setError('Could not load flights. Please try again.') })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [currentOrigin, currentDest, activeDate, retrySearch])
 
   // Fetch all airlines globally
   const [allAirlines, setAllAirlines] = useState<[string, string][]>([])
   useEffect(() => {
     const fetchAirlines = async () => {
       try {
-        const res = await api.get<PageResponse<{name: string, code: string}>>('/airlines?size=50')
-        if (res.content && res.content.length > 0) {
-          setAllAirlines(res.content.map(a => [a.name, a.code]))
-        }
-      } catch (e) {
-        // Fallback if API fails
-        setAllAirlines([
-          ['Vietnam Airlines', 'VN'],
-          ['VietJet Air', 'VJ'],
-          ['Bamboo Airways', 'QH']
-        ])
+        const airlines = await fetchAllPages<{name: string; code: string}>('/airlines', api.get)
+        setAllAirlines(airlines.map(a => [a.name, a.code]))
+      } catch {
+        setAllAirlines([])
+
       }
     }
     fetchAirlines()
@@ -361,11 +355,11 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
         if (selectedAirlines.length > 0 && !selectedAirlines.includes(flight.airline.name)) {
           return false
         }
-        if (flight.basePrice > maxPrice) {
+        if (maxPrice !== null && flight.basePrice > maxPrice) {
           return false
         }
         if (selectedTimes.length > 0) {
-          const hour = new Date(flight.departureTime).getHours()
+          const hour = airportHour(flight.departureTime, flight.origin.timezone)
           let timeOfDay = ''
           if (hour >= 0 && hour < 12) timeOfDay = 'Morning'
           else if (hour >= 12 && hour < 18) timeOfDay = 'Afternoon'
@@ -401,17 +395,20 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
     )
   }
 
+  const priceCeiling = Math.ceil(Math.max(1000000, ...flights.map(f => f.basePrice)) / 100000) * 100000
+
   const totalPax = searchParams.passengers.adults + searchParams.passengers.children + searchParams.passengers.infants
 
   const handleFlightCardSelect = (flight: FlightResponse) => {
     if (searchParams.returnDate && !selectedOutbound) {
       setSelectedOutbound(flight)
-      const outD = new Date(flight.departureTime)
-      const outStr = `${outD.getFullYear()}-${String(outD.getMonth() + 1).padStart(2, '0')}-${String(outD.getDate()).padStart(2, '0')}`
+
+      const outStr = airportDate(flight.departureTime, flight.dest.timezone)
       const returnDate = (searchParams.returnDate && searchParams.returnDate >= outStr) ? searchParams.returnDate : outStr
       setActiveDate(returnDate)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } else if (searchParams.returnDate && selectedOutbound) {
+      if (Date.parse(flight.departureTime) <= Date.parse(selectedOutbound.departureTime)) { setSelectionError('Return departure must be after outbound departure. Choose another flight or date.'); return }
       onSelectFlight(selectedOutbound, flight)
     } else {
       onSelectFlight(flight)
@@ -458,6 +455,7 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
         </div>
       </header>
 
+      {selectionError && <p role="alert" className="p-4 text-red-700">{selectionError}</p>}
       {/* Date Carousel & Search Summary */}
       <section className="bg-[#102a56] text-white py-6">
         <div className="mx-auto max-w-7xl px-5 lg:px-8">
@@ -496,7 +494,7 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
                 <div>
                   <span className="text-emerald-400 font-bold block uppercase text-[10px] tracking-wider">Outbound Selected</span>
                   <span className="font-semibold text-white">
-                    {selectedOutbound.airline.name} ({selectedOutbound.flightNo}) · {formatTime(selectedOutbound.departureTime)} - {formatTime(selectedOutbound.arrivalTime)}
+                    {selectedOutbound.airline.name} ({selectedOutbound.flightNo}) · {formatTime(selectedOutbound.departureTime, selectedOutbound.origin.timezone)} - {formatTime(selectedOutbound.arrivalTime, selectedOutbound.dest.timezone)}
                   </span>
                 </div>
               </div>
@@ -587,7 +585,7 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
                     <span className="font-medium">{name}</span>
                   </label>
                 )) : (
-                  <p className="text-xs text-slate-400">Loading airlines...</p>
+                  <p className="text-xs text-slate-400">Airline filters unavailable</p>
                 )}
               </FilterSection>
 
@@ -618,18 +616,19 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
               {/* Price range */}
               <FilterSection title="Max Price">
                 <div className="flex items-center justify-between text-xs font-semibold text-slate-700 tabular-nums">
-                  <span>900.000 ₫</span>
-                  <span className="text-[#102a56]">{formatVND(maxPrice)}</span>
+                  <span>0 ₫</span>
+                  <span className="text-[#102a56]">{maxPrice === null ? 'No limit' : formatVND(maxPrice)}</span>
                 </div>
                 <input 
                   type="range" 
-                  min="900000" 
-                  max="4000000" 
+                  min="0"
+                  max={priceCeiling}
                   step="100000"
-                  value={maxPrice} 
+                  value={maxPrice ?? priceCeiling}
                   onChange={e => setMaxPrice(Number(e.target.value))}
                   className="mt-3 w-full accent-[#f59e0b] cursor-pointer" 
                 />
+                <button onClick={() => { setMaxPrice(null); setSelectedAirlines([]); setSelectedTimes([]) }} className="text-xs text-blue-700 underline">Reset filters</button>
               </FilterSection>
 
               <Button onClick={() => setMobileFilters(false)} className="mt-4 w-full rounded-xl bg-[#f59e0b] text-[#102a56] font-bold hover:bg-[#d97706] lg:hidden cursor-pointer">
@@ -694,8 +693,8 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
             {!loading && error && (
               <div className="rounded-2xl border border-red-200 bg-red-50 p-6 text-center text-red-700">
                 <p className="font-semibold">{error}</p>
-                <Button onClick={() => window.location.reload()} variant="outline" className="mt-3 rounded-full cursor-pointer">
-                  Reload page
+                <Button onClick={() => setRetrySearch(n => n + 1)} variant="outline" className="mt-3 rounded-full cursor-pointer">
+                  Retry search
                 </Button>
               </div>
             )}
@@ -708,7 +707,7 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
                 </div>
                 <h3 className="mt-4 text-lg font-bold text-slate-900">No flights found</h3>
                 <p className="mt-2 text-sm text-slate-500 max-w-md mx-auto">
-                  We couldn't find any flights matching your filters on {activeDate}. Try changing the date or adjusting your filters.
+                  We couldn&apos;t find any flights matching your filters on {activeDate}. Try changing the date or adjusting your filters.
                 </p>
               </div>
             )}

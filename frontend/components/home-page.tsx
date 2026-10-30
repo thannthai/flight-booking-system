@@ -1,20 +1,15 @@
 'use client'
 
 import { useEffect, useState, useMemo } from 'react'
-import { ArrowRight, CalendarDays, MapPin, Plane, Plus, Search, Users, Minus, Check } from 'lucide-react'
+import { CalendarDays, MapPin, Plane, Plus, Search, Users, Minus, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { fetchAllPages } from '@/lib/search'
+import { airportDate } from '@/lib/format'
 import type { AirportResponse } from '@/types/api'
 import { UserNav } from '@/components/auth/UserNav'
 
-export interface SearchParams {
-  originCode: string;
-  destinationCode: string;
-  departureDate: string;
-  returnDate: string | null;
-  passengers: { adults: number; children: number; infants: number };
-  cabinClass: 'ECONOMY' | 'BUSINESS';
-}
+import type { SearchParams } from '@/lib/checkout-model'
 
 export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => void }) {
   const [trip, setTrip] = useState<'Round trip' | 'One way'>('Round trip')
@@ -49,29 +44,36 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
     return `${year}-${month}-${day}`
   })
 
+  const [airportError, setAirportError] = useState(false)
+  const [airportRetry, setAirportRetry] = useState(0)
   const [airports, setAirports] = useState<AirportResponse[]>([])
   const [from, setFrom] = useState<AirportResponse | null>(null)
   const [to, setTo] = useState<AirportResponse | null>(null)
 
   useEffect(() => {
-    api.get<{ content: AirportResponse[] }>('/airports?size=100')
-      .then(res => {
-        const data = res.content || []
+    let active = true
+    setAirportError(false)
+    fetchAllPages<AirportResponse>('/airports', api.get)
+      .then(data => {
+        if (!active) return
         setAirports(data)
-        if (data.length > 0) {
-          setFrom(data.find(a => a.iataCode === 'SGN') || data[0] || null)
-          setTo(data.find(a => a.iataCode === 'HAN') || data[1] || null)
-        }
+        setFrom(data.find(a => a.iataCode === 'SGN') || data[0] || null)
+        setTo(data.find(a => a.iataCode === 'HAN') || data[1] || null)
       })
-      .catch(err => console.error('Failed to load airports', err))
-  }, [])
+      .catch(() => { if (active) setAirportError(true) })
+    return () => { active = false }
+  }, [airportRetry])
 
   const total = adults + children
 
   const handleSearch = () => {
-    const safeDep = departureDate < todayStr ? todayStr : departureDate
+    if (!from || !to || from.id === to.id || !departureDate || (trip === 'Round trip' && !returnDate)) return
+    const originToday = airportDate(new Date().toISOString(), from?.timezone)
+    const safeDep = departureDate < originToday ? originToday : departureDate
     const safeRet = (trip === 'Round trip' && returnDate < safeDep) ? safeDep : returnDate
     onSearch({
+      originTimezone: from?.timezone,
+      destinationTimezone: to?.timezone,
       originCode: from?.iataCode || 'SGN',
       destinationCode: to?.iataCode || 'HAN',
       departureDate: safeDep,
@@ -81,11 +83,7 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
     })
   }
 
-  const handleDestinationClick = (code: string) => {
-    const apt = airports.find(a => a.iataCode === code)
-    if (apt) setTo(apt)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
+
 
   return (
     <main className="min-h-screen bg-[#f7f8fa] text-slate-950">
@@ -97,7 +95,7 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
             <span className="text-lg font-semibold tracking-tight">skyway<span className="text-[#f59e0b]">.</span></span>
           </button>
           
-          <nav className="hidden items-center text-sm font-medium text-slate-500 md:flex">
+          <nav className="flex items-center text-sm font-medium text-slate-500">
             <UserNav />
           </nav>
         </div>
@@ -148,6 +146,7 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
             </div>
           </div>
 
+          {airportError && <p role="alert" className="text-sm text-red-700 mb-4">Could not load airports. <button onClick={() => setAirportRetry(n => n + 1)} className="underline">Retry</button></p>}
           {/* Search Inputs Grid */}
           <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr_1fr_1fr_1.2fr] lg:items-center">
             
@@ -290,6 +289,7 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
           <div className="mt-5 flex items-center justify-end border-t border-slate-100 pt-5">
             <Button 
               type="button"
+              disabled={!from || !to || from.id === to.id || !departureDate || (trip === 'Round trip' && !returnDate)}
               onClick={handleSearch} 
               className="h-12 w-full sm:w-auto rounded-full bg-[#f59e0b] px-8 text-base font-bold text-[#102a56] shadow-sm transition-all hover:bg-[#d97706] hover:shadow cursor-pointer flex items-center justify-center gap-2"
             >

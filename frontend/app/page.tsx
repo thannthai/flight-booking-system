@@ -1,29 +1,20 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { HomePage, type SearchParams } from '@/components/home-page'
+import { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react'
+import { HomePage } from '@/components/home-page'
+import type { SearchParams } from '@/lib/checkout-model'
 import { FlightResults } from '@/components/flights/FlightResults'
 import { SeatSelection } from '@/components/seats/SeatSelection'
 import { PassengerDetails } from '@/components/passenger/PassengerDetails'
 import { VietQRPayment } from '@/components/payment/VietQRPayment'
-import { formatTime, formatVND } from '@/lib/format'
-import type { FlightResponse, FlightSeatResponse } from '@/types/api'
-import { api } from '@/lib/api'
+import { bookingStep, readBookingSession, reachableStep } from '@/lib/booking-session'
+import type { PassengerData, PassengerDraft, BookingStep, BookingSession } from '@/lib/checkout-model'
+import type { BookingResponse, FlightResponse, FlightSeatResponse } from '@/types/api'
+import { useAuth } from '@/lib/auth-context'
+import { CHECKOUT_SESSION_KEY } from '@/lib/private-session'
+import { storedBookingId, clearBookingAttempt } from '@/lib/payment'
 
-export interface AdaptedFlight {
-  id: number;
-  airline: string;
-  code: string;
-  logo: string;
-  tone: string;
-  depart: string;
-  arrive: string;
-  duration: string;
-  price: string;
-  aircraft: string;
-  badge: string;
-  departDate?: string;
-}
+import { adaptFlight, type AdaptedFlight } from '@/lib/flight'
 
 const getTodayStr = () => {
   const now = new Date()
@@ -33,24 +24,18 @@ const getTodayStr = () => {
   return `${year}-${month}-${day}`
 }
 
-function adaptFlight(flight: FlightResponse): AdaptedFlight {
-  return {
-    id: flight.id,
-    airline: flight.airline.name,
-    code: flight.flightNo,
-    logo: flight.airline.code,
-    tone: flight.airline.code === 'VN' ? 'bg-sky-900' : flight.airline.code === 'VJ' ? 'bg-red-600' : 'bg-emerald-700',
-    depart: formatTime(flight.departureTime),
-    arrive: formatTime(flight.arrivalTime),
-    duration: '2h 15m',
-    price: formatVND(flight.basePrice),
-    aircraft: flight.aircraft.model,
-    badge: '',
-    departDate: new Date(flight.departureTime).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' })
-  }
+export default function BookingApp() {
+  const { user, isLoading } = useAuth()
+  const [identity, setIdentity] = useState<{ id: number | null; revision: number }>({ id: user?.id ?? null, revision: 0 })
+  const id = user?.id ?? null
+  // Guest checkout may be adopted at login. Leaving a private account discards its mounted UI immediately.
+  if (identity.id !== id) setIdentity({ id, revision: identity.revision + (identity.id !== null ? 1 : 0) })
+  if (isLoading) return <main className="p-8 text-center" role="status">Loading session...</main>
+  return <BookingFlow key={identity.revision} />
 }
 
-export default function BookingApp() {
+function BookingFlow() {
+  const { user } = useAuth()
   const [view, setView] = useState<'home' | 'results' | 'seats' | 'passengers' | 'payment'>('home')
   const [searchParams, setSearchParams] = useState<SearchParams>(() => ({
     originCode: 'SGN',
@@ -62,29 +47,30 @@ export default function BookingApp() {
   }))
   const [selectedSeats, setSelectedSeats] = useState<FlightSeatResponse[]>([])
   const [selectedReturnSeats, setSelectedReturnSeats] = useState<FlightSeatResponse[]>([])
-  const [historicallySelectedSeats, setHistoricallySelectedSeats] = useState<number[]>([])
-  const [passengerData, setPassengerData] = useState<any>(null)
-  const [bookingData, setBookingData] = useState<any>(null)
+  const [passengerDraft, setPassengerDraft] = useState<PassengerDraft | null>(null)
+  const [holdExpiresAt, setHoldExpiresAt] = useState<string | null>(null)
+  const [restored, setRestored] = useState(false)
+  const [passengerData, setPassengerData] = useState<PassengerData | null>(null)
+  const [recoveryId, setRecoveryId] = useState<number | null>(null)
+  const [bookingData, setBookingData] = useState<BookingResponse | null>(null)
   const [selectedFlight, setSelectedFlight] = useState<AdaptedFlight | null>(null)
   const [selectedReturnFlight, setSelectedReturnFlight] = useState<AdaptedFlight | null>(null)
 
   const handleHome = async () => {
-    if (bookingData?.id) {
-      try {
-        await api.post(`/bookings/${bookingData.id}/cancel`, {})
-      } catch (e) {}
-    }
+    if (storedBookingId()) clearBookingAttempt()
+    setRecoveryId(null)
     setBookingData(null)
     setSelectedFlight(null)
     setSelectedReturnFlight(null)
     setSelectedSeats([])
     setSelectedReturnSeats([])
     setPassengerData(null)
-    setHistoricallySelectedSeats([])
+    setPassengerDraft(null)
+    setHoldExpiresAt(null)
     navigateTo('home')
   }
 
-  const navigateTo = (newView: 'home' | 'results' | 'seats' | 'passengers' | 'payment', pushHistory = true) => {
+  const navigateTo = (newView: BookingStep, pushHistory = true) => {
     setView(newView)
     window.scrollTo({ top: 0, behavior: 'instant' })
     if (typeof window !== 'undefined' && pushHistory) {
@@ -98,87 +84,51 @@ export default function BookingApp() {
     }
   }
 
-  const bookingDataRef = useRef(bookingData)
+  const currentDraft = { selectedFlight, selectedReturnFlight, passengerData, selectedSeats, selectedReturnSeats, bookingData, holdExpiresAt }
+  const currentRef = useRef({ draft: currentDraft, recoveryId })
+  useLayoutEffect(() => { currentRef.current = { draft: currentDraft, recoveryId } })
   useEffect(() => {
-    bookingDataRef.current = bookingData
-  }, [bookingData])
-
-  // Handle browser Back / Forward buttons (popstate)
-  useEffect(() => {
-    const handlePopState = (e: PopStateEvent) => {
-      if (bookingDataRef.current?.id) {
-        window.history.pushState({ step: 'payment' }, '', '?step=payment')
-        setView('payment')
-        return
-      }
-      const step = e.state?.step || (new URL(window.location.href).searchParams.get('step') as any) || 'home'
-      setView(step)
-      window.scrollTo({ top: 0, behavior: 'instant' })
+    const handlePopState = () => {
+      const step = bookingStep(new URL(window.location.href).searchParams.get('step'))
+      setView(reachableStep(step, currentRef.current.draft, currentRef.current.recoveryId))
     }
     window.addEventListener('popstate', handlePopState)
     return () => window.removeEventListener('popstate', handlePopState)
   }, [])
-
-  // Restore session on reload (F5) or initial load
   useEffect(() => {
-    try {
-      const urlStep = new URL(window.location.href).searchParams.get('step') as any
-      const saved = sessionStorage.getItem('skyway_session')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed.selectedFlight) setSelectedFlight(parsed.selectedFlight)
-        if (parsed.selectedReturnFlight) setSelectedReturnFlight(parsed.selectedReturnFlight)
-        if (parsed.searchParams) setSearchParams(parsed.searchParams)
-        if (parsed.passengerData) setPassengerData(parsed.passengerData)
-        if (parsed.selectedSeats) setSelectedSeats(parsed.selectedSeats)
-        if (parsed.selectedReturnSeats) setSelectedReturnSeats(parsed.selectedReturnSeats)
-        if (parsed.historicallySelectedSeats) setHistoricallySelectedSeats(parsed.historicallySelectedSeats)
-        if (parsed.bookingData) setBookingData(parsed.bookingData)
-        
-        if (parsed.bookingData?.id) {
-          setView('payment')
-          if (typeof window !== 'undefined') window.history.replaceState({ step: 'payment' }, '', '?step=payment')
-        } else if (urlStep) {
-          setView(urlStep)
-        } else if (parsed.view && parsed.view !== 'home') {
-          setView(parsed.view)
-        }
-      } else if (urlStep) {
-        setView(urlStep)
-      }
-    } catch (e) {
-      console.warn('Failed to restore session:', e)
+    const confirmedId = storedBookingId()
+    setRecoveryId(confirmedId)
+    let raw: string | null = null
+    try { raw = sessionStorage.getItem(CHECKOUT_SESSION_KEY) } catch { /* Continue with a fresh in-memory draft. */ }
+    const saved = readBookingSession(raw, user?.id ?? null)
+    if (saved) {
+      setSelectedFlight(saved.selectedFlight); setSelectedReturnFlight(saved.selectedReturnFlight)
+      setSearchParams(saved.searchParams); setPassengerData(saved.passengerData); setPassengerDraft(saved.passengerDraft)
+      setSelectedSeats(saved.selectedSeats); setSelectedReturnSeats(saved.selectedReturnSeats)
+      setBookingData(saved.bookingData); setHoldExpiresAt(saved.holdExpiresAt)
+      const query = new URL(window.location.href).searchParams.get('step')
+      setView(reachableStep(query ? bookingStep(query) : saved.view, saved, confirmedId))
+    } else {
+      try { sessionStorage.removeItem(CHECKOUT_SESSION_KEY) } catch { /* Storage unavailable. */ }
+      if (confirmedId) setView('payment')
     }
+    setRestored(true)
   }, [])
-
-  // Persist session across navigation
   useEffect(() => {
-    try {
-      if (view === 'home') {
-        sessionStorage.removeItem('skyway_session')
-      } else {
-        sessionStorage.setItem('skyway_session', JSON.stringify({
-          view,
-          selectedFlight,
-          selectedReturnFlight,
-          searchParams,
-          passengerData,
-          selectedSeats,
-          selectedReturnSeats,
-          historicallySelectedSeats,
-          bookingData
-        }))
-      }
-    } catch (e) {
-      // Ignore quota errors in private browsing
-    }
-  }, [view, selectedFlight, selectedReturnFlight, searchParams, passengerData, selectedSeats, selectedReturnSeats, bookingData])
+    if (!restored) return
+    if (view === 'home') { try { sessionStorage.removeItem(CHECKOUT_SESSION_KEY) } catch { /* Storage unavailable. */ } return }
+    const session: BookingSession = { version: 3, ownerId: user?.id ?? null, updatedAt: Date.now(), view, searchParams,
+      selectedFlight, selectedReturnFlight, passengerData, passengerDraft, selectedSeats, selectedReturnSeats, bookingData, holdExpiresAt }
+    try { sessionStorage.setItem(CHECKOUT_SESSION_KEY, JSON.stringify(session)) } catch { /* Unknown-create marker has its own fail-closed storage path. */ }
+  }, [restored, view, searchParams, selectedFlight, selectedReturnFlight, passengerData, passengerDraft, selectedSeats, selectedReturnSeats, bookingData, holdExpiresAt, user?.id])
+  const savePassengerDraft = useCallback((draft: PassengerDraft) => setPassengerDraft(draft), [])
 
   const handleFlightSelect = async (outbound: FlightResponse, returnFlight?: FlightResponse) => {
-    if (bookingData?.id) {
-      try { await api.post(`/bookings/${bookingData.id}/cancel`, {}) } catch (e) {}
-      setBookingData(null)
-    }
+    setBookingData(null)
+    setRecoveryId(null)
+    setPassengerData(null)
+    setPassengerDraft(null)
+    setHoldExpiresAt(null)
     setSelectedFlight(adaptFlight(outbound))
     if (returnFlight) {
       setSelectedReturnFlight(adaptFlight(returnFlight))
@@ -190,9 +140,12 @@ export default function BookingApp() {
     navigateTo('passengers')
   }
 
+  if (!restored) return <main className="p-8" role="status">Restoring booking...</main>
+
   return view === 'home' ? (
     <HomePage 
       onSearch={(params) => {
+        setPassengerData(null); setPassengerDraft(null); setSelectedFlight(null); setSelectedReturnFlight(null); setSelectedSeats([]); setSelectedReturnSeats([]); setHoldExpiresAt(null); setBookingData(null); setRecoveryId(null)
         setSearchParams(params)
         navigateTo('results')
       }} 
@@ -208,14 +161,11 @@ export default function BookingApp() {
       flight={selectedFlight}
       returnFlight={selectedReturnFlight}
       searchParams={searchParams}
-      passengerData={passengerData}
+      passengerData={passengerDraft ? { ...passengerData, ...passengerDraft } : passengerData}
+      onDraftChange={savePassengerDraft}
       onBack={() => navigateTo('results')} 
       onHome={handleHome} 
       onContinue={async (data) => { 
-        if (bookingData?.id) {
-          try { await api.post(`/bookings/${bookingData.id}/cancel`, {}) } catch (e) {}
-          setBookingData(null)
-        }
         setPassengerData(data); 
         navigateTo('seats') 
       }} 
@@ -226,13 +176,13 @@ export default function BookingApp() {
       returnFlight={selectedReturnFlight}
       passengerData={passengerData}
       bookingData={bookingData}
+      cabinClass={searchParams.cabinClass}
       initialSeats={selectedSeats}
       initialReturnSeats={selectedReturnSeats}
-      historicallySelectedSeats={historicallySelectedSeats}
-      onSeatSelect={(seatId) => setHistoricallySelectedSeats(prev => Array.from(new Set([...prev, seatId])))}
       onBack={() => navigateTo('passengers')} 
       onHome={handleHome} 
-      onContinue={(seats, booking, returnSeats) => { 
+      onContinue={(seats, booking, returnSeats, expiresAt) => {
+        setHoldExpiresAt(expiresAt || null)
         setSelectedSeats(seats); 
         setSelectedReturnSeats(returnSeats || []);
         setBookingData(booking); 
@@ -247,6 +197,8 @@ export default function BookingApp() {
       returnSeats={selectedReturnSeats}
       passengerData={passengerData}
       bookingData={bookingData}
+      holdExpiresAt={holdExpiresAt}
+      bookingId={recoveryId || undefined}
       onBookingCreated={(booking) => setBookingData(booking)}
       onBack={() => navigateTo('seats')} 
       onHome={handleHome} 

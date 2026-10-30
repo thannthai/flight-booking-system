@@ -1,10 +1,11 @@
 'use client'
 
-import React, { useState } from 'react'
-import { X, Printer, Plane, QrCode, Download, ShieldCheck, Utensils, Luggage, CheckCircle2 } from 'lucide-react'
+import { useDialog } from '@/lib/use-dialog'
+import { useState } from 'react'
+import { X, Printer, Plane, ShieldCheck, Utensils, Luggage, CheckCircle2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { BookingResponse, TicketResponse } from '@/types/api'
-import { formatTime, formatVND } from '@/lib/format'
+import type { BookingResponse } from '@/types/api'
+import { formatTime, formatDate } from '@/lib/format'
 
 interface BoardingPassModalProps {
   isOpen: boolean
@@ -13,36 +14,13 @@ interface BoardingPassModalProps {
   flight?: any
 }
 
-export function BoardingPassModal({ isOpen, onClose, booking, flight }: BoardingPassModalProps) {
+export function BoardingPassModal({ isOpen, onClose, booking }: BoardingPassModalProps) {
+  const dialogRef = useDialog(isOpen, onClose)
   const [selectedTicketIndex, setSelectedTicketIndex] = useState<number | 'all'>('all')
 
   if (!isOpen || !booking) return null
 
   const tickets = booking.tickets || []
-  
-  // Calculate boarding time: 45 minutes before departure
-  const getBoardingTime = (depTimeStr?: string) => {
-    if (!depTimeStr) return '07:15'
-    try {
-      const d = new Date(depTimeStr)
-      if (isNaN(d.getTime())) return depTimeStr
-      d.setMinutes(d.getMinutes() - 45)
-      return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-    } catch {
-      return '45m before'
-    }
-  }
-
-  const formatDateDisplay = (dateStr?: string) => {
-    if (!dateStr) return 'Sun, 12 Oct 2026'
-    try {
-      const d = new Date(dateStr)
-      if (isNaN(d.getTime())) return dateStr
-      return d.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })
-    } catch {
-      return dateStr
-    }
-  }
 
   const handlePrint = () => {
     window.print()
@@ -53,9 +31,9 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
     : [tickets[selectedTicketIndex]].filter(Boolean)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:static">
+    <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="Demo E-Tickets" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm overflow-y-auto print:p-0 print:bg-white print:static">
       {/* Print Styles */}
-      <style jsx global>{`
+      <style>{`
         @media print {
           body * {
             visibility: hidden;
@@ -93,13 +71,13 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
             </span>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-bold text-slate-900">Official Boarding Passes</h2>
+                <h2 className="text-base font-bold text-slate-900">Demo E-Tickets</h2>
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
                   {booking.status}
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                PNR Reference: <span className="font-mono font-bold text-[#102a56]">{booking.pnr}</span> · {tickets.length} {tickets.length === 1 ? 'Passenger' : 'Passengers'}
+                PNR Reference: <span className="font-mono font-bold text-[#102a56]">{booking.pnr}</span> · {booking.passengers.length} {booking.passengers.length === 1 ? 'Passenger' : 'Passengers'}
               </p>
             </div>
           </div>
@@ -111,7 +89,7 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
               className="h-9 px-4 rounded-xl bg-[#102a56] hover:bg-slate-800 text-white font-bold text-xs cursor-pointer flex items-center gap-2"
             >
               <Printer className="size-3.5" />
-              <span>Print All Passes</span>
+              <span>Print All Tickets</span>
             </Button>
             <button
               type="button"
@@ -135,7 +113,7 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
                   : 'bg-white text-slate-600 hover:bg-slate-200'
               }`}
             >
-              All Boarding Passes ({tickets.length})
+              All E-Tickets ({tickets.length})
             </button>
             {tickets.map((t, idx) => {
               const paxName = t.passengerName || t.passenger?.fullName || `Passenger ${idx + 1}`
@@ -165,24 +143,25 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
             <div className="text-center py-12 text-slate-500">No ticket details available for this booking.</div>
           ) : (
             displayedTickets.map((ticket, idx) => {
-              const ticketFlight = ticket.flight || flight
-              const airlineName = ticketFlight?.airline?.name || flight?.airline || 'Vietnam Airlines'
-              const airlineCode = ticketFlight?.airline?.code || flight?.logo || 'VN'
-              const flightNo = ticketFlight?.flightNo || flight?.code || 'VN 123'
-              const aircraft = ticketFlight?.aircraft?.model || flight?.aircraft || 'Airbus A321'
-              const originCode = ticketFlight?.origin?.iataCode || 'SGN'
-              const originCity = ticketFlight?.origin?.city || 'Ho Chi Minh City'
-              const destCode = ticketFlight?.dest?.iataCode || 'HAN'
-              const destCity = ticketFlight?.dest?.city || 'Hanoi'
-              const depTime = ticketFlight?.departureTime ? formatTime(ticketFlight.departureTime) : (flight?.depart || '08:00')
-              const arrTime = ticketFlight?.arrivalTime ? formatTime(ticketFlight.arrivalTime) : (flight?.arrive || '10:15')
-              const flightDate = formatDateDisplay(ticketFlight?.departureTime)
-              const boardingTime = getBoardingTime(ticketFlight?.departureTime)
+              const ticketFlight = ticket.flight
+              if (!ticketFlight) return <p key={ticket.id}>Flight details unavailable. Refresh booking details.</p>
+              const airlineName = ticketFlight?.airline?.name || 'Not provided'
+              const airlineCode = ticketFlight?.airline?.code || '—'
+              const flightNo = ticketFlight?.flightNo || '—'
+              const aircraft = ticketFlight?.aircraft?.model || 'Not provided'
+              const originCode = ticketFlight?.origin?.iataCode || '—'
+              const originCity = ticketFlight?.origin?.city || '—'
+              const destCode = ticketFlight?.dest?.iataCode || '—'
+              const destCity = ticketFlight?.dest?.city || '—'
+              const depTime = ticketFlight?.departureTime ? formatTime(ticketFlight.departureTime, ticketFlight.origin?.timezone) : '—'
+              const arrTime = ticketFlight?.arrivalTime ? formatTime(ticketFlight.arrivalTime, ticketFlight.dest?.timezone) : '—'
+              const flightDate = ticketFlight?.departureTime ? formatDate(ticketFlight.departureTime, 'en-GB', ticketFlight.origin?.timezone) : '—'
+              const boardingTime = 'Not provided'
               const passengerName = (ticket.passengerName || ticket.passenger?.fullName || booking.contactName || 'PASSENGER').toUpperCase()
               const isInfant = ticket.passengerType === 'INFANT'
               const seatNo = isInfant ? 'INFANT (LAP)' : ticket.seat?.seatNo || 'ASSIGNED'
               const cabinClass = isInfant ? 'LAP INFANT' : ticket.seat?.cabinClass || 'ECONOMY'
-              const ticketNo = ticket.ticketNo || `${airlineCode}-${booking.pnr}-1-${String(idx + 1).padStart(2, '0')}`
+              const ticketNo = ticket.ticketNo || 'Not issued'
 
               return (
                 <div 
@@ -213,7 +192,7 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
                         {cabinClass}
                       </span>
                       <div className="text-right">
-                        <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-300">BOARDING PASS</span>
+                        <span className="block text-[10px] uppercase font-bold tracking-wider text-slate-300">DEMO E-TICKET</span>
                         <span className="text-xs font-mono font-bold text-amber-300">{ticketNo}</span>
                       </div>
                     </div>
@@ -284,13 +263,13 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
                         <div className="p-3 bg-amber-50/60 rounded-2xl border border-amber-200/60">
                           <span className="text-[10px] font-bold text-amber-700 uppercase tracking-wider block">BOARDING TIME</span>
                           <span className="text-xl font-black text-amber-900">{boardingTime}</span>
-                          <span className="text-[9px] text-amber-700 block mt-0.5">Closes 15m prior</span>
+                          <span className="text-[9px] text-amber-700 block mt-0.5">Check with airline</span>
                         </div>
 
                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">GATE</span>
-                          <span className="text-xl font-black text-slate-900">Gate 06</span>
-                          <span className="text-[9px] text-slate-500 block mt-0.5">Terminal 1</span>
+                          <span className="text-xl font-black text-slate-900">Not provided</span>
+                          <span className="text-[9px] text-slate-500 block mt-0.5">Check with airline</span>
                         </div>
 
                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
@@ -304,7 +283,7 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
                         <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
                           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">STATUS</span>
                           <span className="text-sm font-black text-emerald-600 flex items-center gap-1 mt-1">
-                            <CheckCircle2 className="size-3.5" /> CONFIRMED
+                            <CheckCircle2 className="size-3.5" /> {ticket.status}
                           </span>
                           <span className="text-[9px] text-slate-500 block mt-0.5">E-Ticket Ready</span>
                         </div>
@@ -369,22 +348,7 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
                         </div>
                       </div>
 
-                      {/* Barcode / QR Visual Representation */}
-                      <div className="mt-6 pt-4 border-t border-slate-200 flex flex-col items-center">
-                        {/* Barcode bars */}
-                        <div className="w-full flex items-center justify-between gap-[2px] h-10 px-2 bg-white rounded-lg border border-slate-200 py-1 mb-2">
-                          {[3, 1, 2, 4, 1, 3, 2, 1, 4, 2, 3, 1, 2, 1, 3, 4, 1, 2, 3, 1, 2, 4, 1, 3].map((w, i) => (
-                            <div 
-                              key={i} 
-                              className="bg-slate-900 h-full" 
-                              style={{ width: `${w * 2}px` }} 
-                            />
-                          ))}
-                        </div>
-                        <span className="text-[10px] font-mono font-bold tracking-wider text-slate-500">
-                          {ticketNo}
-                        </span>
-                      </div>
+                      <p className="mt-6 pt-4 border-t border-slate-200 text-center text-xs font-mono">{ticketNo}</p>
 
                     </div>
                   </div>
@@ -397,7 +361,7 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
         {/* Modal Bottom Footer */}
         <div className="no-print p-4 sm:p-5 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
           <p className="text-xs text-slate-500 text-center sm:text-left">
-            Please present this boarding pass and a valid identification document at the airport security check.
+            Demo booking confirmation only. This is not an airline boarding pass or a document for airport security.
           </p>
           <div className="flex items-center gap-3 w-full sm:w-auto">
             <Button
@@ -414,7 +378,7 @@ export function BoardingPassModal({ isOpen, onClose, booking, flight }: Boarding
               className="h-10 px-5 rounded-xl bg-[#102a56] hover:bg-slate-800 text-white font-bold text-xs cursor-pointer flex items-center gap-2 flex-1 sm:flex-initial"
             >
               <Printer className="size-3.5" />
-              <span>Print Boarding Pass</span>
+              <span>Print E-Ticket</span>
             </Button>
           </div>
         </div>

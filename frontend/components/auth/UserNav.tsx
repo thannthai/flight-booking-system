@@ -1,16 +1,22 @@
 'use client'
 
-import React, { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { User, LogOut, ChevronDown, ShieldCheck, Mail, Phone, Users, Ticket } from 'lucide-react'
+import { LogOut, ChevronDown, ShieldCheck, Mail, Phone, Users, Ticket } from 'lucide-react'
 import { PassengerDirectoryModal } from '@/components/passenger/PassengerDirectoryModal'
 import { MyBookingsModal } from '@/components/booking/MyBookingsModal'
 
 export function UserNav() {
-  const { user, isAuthenticated, openAuthModal, logout } = useAuth()
+  const { user, isAuthenticated, openAuthModal, logout, authError } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [passengerModalOpen, setPassengerModalOpen] = useState(false)
   const [myBookingsOpen, setMyBookingsOpen] = useState(false)
+  const privateOwner = useRef(user?.id)
+  if (privateOwner.current !== user?.id) {
+    privateOwner.current = user?.id
+    if (passengerModalOpen) setPassengerModalOpen(false)
+    if (myBookingsOpen) setMyBookingsOpen(false)
+  }
   const menuRef = useRef<HTMLDivElement>(null)
 
   // Close dropdown when clicking outside
@@ -26,7 +32,8 @@ export function UserNav() {
 
   if (!isAuthenticated || !user) {
     return (
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        {authError && <p role="alert" className="text-xs text-red-700">{authError}</p>}
         <button
           type="button"
           onClick={() => openAuthModal('login')}
@@ -125,7 +132,7 @@ export function UserNav() {
                 type="button"
                 onClick={async () => {
                   setDropdownOpen(false)
-                  await logout()
+                  try { await logout() } catch { /* AuthProvider displays the server sign-out warning. */ }
                 }}
                 className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-semibold text-red-600 rounded-xl hover:bg-red-50 transition-colors cursor-pointer"
               >
@@ -145,6 +152,7 @@ export function UserNav() {
       <MyBookingsModal 
         isOpen={myBookingsOpen} 
         onClose={() => setMyBookingsOpen(false)} 
+        onPayBooking={booking => window.location.assign(`/payment/status?bookingId=${booking.id}`)}
       />
     </>
   )

@@ -1,0 +1,39 @@
+name: Frontend CI
+
+on:
+  push:
+    branches: [main, master]
+    paths: ['frontend/**', '.github/workflows/frontend-ci.yml']
+  pull_request:
+    branches: [main, master]
+    paths: ['frontend/**', '.github/workflows/frontend-ci.yml']
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      NEXT_TELEMETRY_DISABLED: '1'
+      BACKEND_API_URL: https://backend.example.invalid/api/v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install pinned pnpm
+        run: npm install --global pnpm@12.3.4
+      - name: Frozen dependency install
+        run: pnpm install --frozen-lockfile
+      - name: Regression tests
+        run: pnpm test
+      - name: TypeScript
+        run: pnpm exec next typegen --webpack && pnpm typecheck
+      - name: Lint
+        run: pnpm lint
+      - name: Production dependency audit
+        run: pnpm audit --prod
+      - name: Production build (Webpack)
+        run: pnpm build

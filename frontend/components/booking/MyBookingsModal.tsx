@@ -1,9 +1,12 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { X, Plane, Calendar, Clock, AlertCircle, RefreshCw, Ticket, CheckCircle2, ChevronRight, Ban } from 'lucide-react'
+import { useDialog } from '@/lib/use-dialog'
+import { useState, useEffect } from 'react'
+import { X, Plane, AlertCircle, RefreshCw, Ticket, ChevronRight, Ban } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
+import { fetchAllPages } from '@/lib/search'
+import { hasUnresolvedBooking, storedBookingId, clearBookingAttempt } from '@/lib/payment'
 import type { BookingResponse } from '@/types/api'
 import { formatTime, formatVND } from '@/lib/format'
 import { BoardingPassModal } from '@/components/booking/BoardingPassModal'
@@ -15,6 +18,7 @@ interface MyBookingsModalProps {
 }
 
 export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsModalProps) {
+  const dialogRef = useDialog(isOpen, onClose)
   const [bookings, setBookings] = useState<BookingResponse[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -27,9 +31,9 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
   const fetchBookings = () => {
     setLoading(true)
     setError(null)
-    api.getMyBookings(0, 50)
+    fetchAllPages<BookingResponse>('/bookings/my?sort=createdAt,desc', api.get)
       .then(res => {
-        setBookings(res.content || [])
+        setBookings(res)
         setLoading(false)
       })
       .catch(err => {
@@ -70,7 +74,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
 
   return (
     <>
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-label="My Bookings" className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
         <div className="relative w-full max-w-4xl max-h-[90vh] flex flex-col bg-[#f7f8fa] rounded-3xl shadow-2xl border border-slate-200 overflow-hidden">
           
           {/* Header */}
@@ -96,6 +100,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
               </button>
               <button
                 type="button"
+                aria-label="Close My Bookings"
                 onClick={onClose}
                 className="size-9 flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
               >
@@ -122,6 +127,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
             ))}
           </div>
 
+          {hasUnresolvedBooking() && !storedBookingId() && !loading && !error && <div className="p-4 text-sm text-amber-900 bg-amber-50"><p>A reservation request may have succeeded. Check the bookings below before creating another.</p><button className="underline" onClick={() => { if (window.confirm('Have you reconciled the previous request and confirmed it did not create a booking?')) { clearBookingAttempt(); onClose() } }}>I have reconciled the previous request</button></div>}
           {/* Booking List Body */}
           <div className="flex-1 overflow-y-auto p-6 sm:p-8">
             <div className="flex flex-col gap-5 sm:gap-6">
@@ -153,15 +159,14 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
               </div>
             ) : (
               filteredBookings.map((b) => {
-                const firstTicket = b.tickets?.[0]
-                const flight = firstTicket?.flight
+                const flights = [...new Map((b.tickets || []).filter(t => t.flight).map(t => [t.flight.id, t.flight])).values()]
                 const statusColor = b.status === 'COMPLETED'
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
                   : b.status === 'PENDING'
                   ? 'bg-amber-50 text-amber-700 border-amber-100'
                   : 'bg-slate-100 text-slate-600 border-slate-200'
 
-                const paxCount = b.tickets?.length || b.passengers?.length || 1
+                const paxCount = b.passengers?.length || new Set(b.tickets?.map(t => t.passengerId)).size
 
                 return (
                   <div
@@ -185,8 +190,8 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                     {/* Middle row: Flight Route and Passenger details */}
                     <div className="grid sm:grid-cols-[1fr_auto] gap-4 items-center">
                       <div className="flex flex-col gap-3">
-                        {flight ? (
-                          <div className="flex items-center gap-4">
+                        {flights.length ? flights.map(flight => (
+                          <div key={flight.id} className="flex items-center gap-4">
                             <div className="size-10 bg-slate-50 rounded-xl p-1 border border-slate-100 flex items-center justify-center shrink-0">
                               <img
                                 src={`/airlines/${flight.airline?.code}.svg`}
@@ -205,12 +210,12 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                                 <span>{flight.dest?.city} ({flight.dest?.iataCode})</span>
                                 <span className="text-slate-300">•</span>
                                 <span className="text-slate-500 font-normal">
-                                  {formatTime(flight.departureTime)} - {formatTime(flight.arrivalTime)}
+                                  {formatTime(flight.departureTime, flight.origin.timezone)} - {formatTime(flight.arrivalTime, flight.dest.timezone)}
                                 </span>
                               </div>
                             </div>
                           </div>
-                        ) : (
+                        )) : (
                           <p className="text-sm font-semibold text-slate-700">Flight Details Processing</p>
                         )}
 
@@ -254,7 +259,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                             className="h-10 px-5 rounded-xl bg-[#102a56] hover:bg-slate-800 text-white font-bold text-xs cursor-pointer flex items-center gap-2"
                           >
                             <Ticket className="size-4" />
-                            <span>View Boarding Pass</span>
+                            <span>View E-Tickets</span>
                           </Button>
                         )}
 

@@ -1,5 +1,6 @@
 'use client'
 
+import { useDialog } from '@/lib/use-dialog'
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { 
@@ -10,10 +11,8 @@ import {
   Phone, 
   Eye, 
   EyeOff, 
-  Plane, 
   Sparkles, 
   AlertCircle, 
-  CheckCircle2, 
   Loader2 
 } from 'lucide-react'
 
@@ -22,11 +21,11 @@ export function AuthModal() {
     isAuthModalOpen, 
     authModalMode, 
     closeAuthModal, 
-    openAuthModal, 
     login, 
     register 
   } = useAuth()
 
+  const dialogRef = useDialog(isAuthModalOpen, closeAuthModal)
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -143,6 +142,8 @@ export function AuthModal() {
       onClick={(e) => {
         if (e.target === e.currentTarget) closeAuthModal()
       }}
+      ref={dialogRef}
+      aria-label="Authentication"
       role="dialog"
       aria-modal="true"
     >

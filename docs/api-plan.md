@@ -1,5 +1,7 @@
 # Flight Booking System — API Design & Implementation Plan
 
+> Historical design reference, not a complete executable contract. Verify current controllers, DTOs, enums and migrations before implementation; some planned roles/modules below are not implemented. See docs/PROJECT_STATUS.md for current verification evidence.
+
 ## Nguyên tắc chung
 
 - Base URL: `/api/v1`
@@ -68,7 +70,7 @@
 3. Master Data (Airport, Airline, Aircraft) ← seed data cần có
 4. Flight + Flight Seats                    ← core search
 5. Booking + Seat Hold (Redis)              ← core business
-6. Payment (Stripe/Sepay + Webhook)         ← chốt đơn
+6. Payment (PayOS + Webhook)                ← chốt đơn
 7. Ticket                                   ← issue sau payment
 8. Notification (@Async email)              ← fire-and-forget
 9. Scheduler                                ← background jobs
@@ -643,54 +645,31 @@ DEL hold:seat:{seatId}:user:{userId}                    ← confirm / expire
 
 ### APIs
 
-#### POST `/payments/create`
-- **Auth:** Bearer token (USER)
-- **Request:**
-```json
-{ "bookingId": 1, "provider": "STRIPE" }
-```
-- **Response:**
-```json
-{
-  "paymentUrl": "https://checkout.stripe.com/pay/cs_test_xxx",
-  "provider": "STRIPE",
-  "amount": 979000,
-  "currency": "VND"
-}
-```
-- **Logic:**
-  1. Load booking, verify status = PENDING, thuộc về user
-  2. Verify ghế vẫn trong thời gian hold
-  3. Tạo Stripe checkout session với `metadata: { bookingId }`
-  4. Save PAYMENT (status = PENDING, provider_txn_id = session_id)
-  5. Trả payment URL
+#### POST `/payments/create-link`
+- **Auth:** Bearer token; booking ownership is checked by the backend.
+- **Request:** `{ "bookingId": 1 }` (provider is selected by the backend).
+- **Response:** `ApiResponse<PaymentResponse>`, with `id`, `bookingId`, `orderCode`,
+  `provider`, `providerTxnId`, `amount`, `currency`, `status`, `refundStatus`,
+  `paymentUrl`, `qrCode`, `expiredAt`, `paidAt`, `createdAt` as defined by the DTO.
+  `qrCode` is the provider's raw QR payload; encode locally rather than inventing bank data.
+- **Logic:** Persist/reuse the pending payment intent in a short transaction; call/reconcile
+  payOS outside database locks; attach the provider response in a second guarded transaction.
+  Enforce ownership, booking status and the existing payment deadline throughout.
 
----
+#### GET `/payments/booking/{bookingId}`
+- **Auth:** Bearer token; booking ownership required.
+- **Response:** `ApiResponse<PaymentStatusResponse>` with `bookingId`, `bookingStatus`,
+  `paymentStatus`, `payment`. `paymentStatus=NOT_CREATED` and `payment=null` are valid.
+  Frontend redirects cannot establish payment success; read backend state.
 
 #### POST `/payments/webhook`
-- **Auth:** Public — verify Stripe signature
-- **Logic:**
-  1. Verify `Stripe-Signature` header
-  2. Extract `provider_txn_id`
-  3. **Idempotency:** `SELECT WHERE provider_txn_id = ? AND status = 'SUCCESS'` → nếu đã xử lý → return 200
-  4. Nếu `payment_intent.succeeded`:
-     - UPDATE PAYMENT: status = SUCCESS, paid_at = NOW()
-     - UPDATE BOOKING: status = COMPLETED
-     - UPDATE FLIGHT_SEATS: status = BOOKED, clear hold fields
-     - `DEL Redis "hold:seat:{id}:user:{userId}"`
-     - Generate ticket_no: `{airline}-{PNR}-{legOrder}-{passengerIndex}`
-     - UPDATE TICKETS: status = ISSUED, ticket_no, issued_at = NOW()
-     - Publish `PaymentSuccessEvent` → TICKET_ISSUED email
-  5. Nếu `payment_intent.payment_failed`:
-     - UPDATE PAYMENT: status = FAILED
-     - UPDATE BOOKING: status = CANCELLED
-     - UPDATE FLIGHT_SEATS: status = AVAILABLE, clear hold fields
-     - `DEL Redis hold keys`
-
----
-
-#### GET `/payments/{bookingId}/status`
-- **Auth:** Bearer token (USER)
+- **Auth:** Public endpoint; verify payOS webhook data signature in the backend.
+- **Logic:** Resolve the order/payment and verify amount under the existing transaction/lock
+  rules. Processing is idempotent. Valid, timely success can complete the booking and issue
+  its existing tickets once; duplicate notifications must not issue tickets again.
+  Late success on a terminal booking enters the implemented refund/reconciliation state
+  rather than reopening the booking. Do not infer a generic FAILED payment status from this
+  historical plan; inspect the implemented enums and service for each provider outcome.
 
 ---
 
@@ -839,8 +818,8 @@ POST   /bookings
 GET    /bookings/{id}
 GET    /bookings/my
 POST   /bookings/{id}/cancel-request
-POST   /payments/create
-GET    /payments/{bookingId}/status
+POST   /payments/create-link
+GET    /payments/booking/{bookingId}
 GET    /users/me/passengers
 POST   /users/me/passengers
 PUT    /users/me/passengers/{id}
@@ -921,8 +900,8 @@ com.thanh.backend/
 ├── payment/
 │   ├── entity/         Payment
 │   ├── repository/     PaymentRepository
-│   ├── dto/            CreatePaymentRequest, PaymentResponse
-│   ├── service/        PaymentService, StripeService
+│   ├── dto/            PaymentResponse, PayOSWebhookData
+│   ├── service/        PaymentService, PayOSGatewayService
 │   └── controller/     PaymentController
 │
 ├── notification/

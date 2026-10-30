@@ -72,7 +72,7 @@ export function formatCountdown(totalSeconds: number): string {
 export function secondsUntil(isoExpiry: string): number {
   const expiryMs = new Date(isoExpiry).getTime()
   const nowMs = Date.now()
-  return Math.max(0, Math.floor((expiryMs - nowMs) / 1000))
+  return Number.isFinite(expiryMs) ? Math.max(0, Math.floor((expiryMs - nowMs) / 1000)) : 0
 }
 
 // ---------------------------------------------------------------------------
@@ -85,12 +85,13 @@ export function secondsUntil(isoExpiry: string): number {
  *
  * formatTime("2026-11-14T08:00:00+07:00") → "08:00"
  */
-export function formatTime(isoDatetime: string): string {
+export function formatTime(isoDatetime: string, timeZone = 'Asia/Ho_Chi_Minh'): string {
+  if (!Number.isFinite(Date.parse(isoDatetime))) return '—'
   return new Intl.DateTimeFormat('vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-    timeZone: 'Asia/Ho_Chi_Minh',
+    timeZone,
   }).format(new Date(isoDatetime))
 }
 
@@ -104,12 +105,14 @@ export function formatTime(isoDatetime: string): string {
 export function formatDate(
   isoDatetime: string,
   locale: 'vi-VN' | 'en-GB' = 'vi-VN',
+  timeZone = 'Asia/Ho_Chi_Minh',
 ): string {
+  if (!Number.isFinite(Date.parse(isoDatetime))) return '—'
   return new Intl.DateTimeFormat(locale, {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
-    timeZone: 'Asia/Ho_Chi_Minh',
+    timeZone,
   }).format(new Date(isoDatetime))
 }
 
@@ -148,4 +151,14 @@ export function computeDuration(
   if (hours === 0) return `${minutes}m`
   if (minutes === 0) return `${hours}h`
   return `${hours}h ${minutes}m`
+}
+
+/** Calendar date at an airport, independent of browser timezone. */
+export function airportDate(iso: string, timeZone = 'Asia/Ho_Chi_Minh'): string {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date(iso))
+  const part = (name: string) => parts.find(p => p.type === name)?.value
+  return `${part('year')}-${part('month')}-${part('day')}`
+}
+export function airportHour(iso: string, timeZone = 'Asia/Ho_Chi_Minh'): number {
+  return Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(new Date(iso)))
 }

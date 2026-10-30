@@ -230,7 +230,7 @@ export interface TicketResponse {
   status: TicketStatus;
   issuedAt?: string;
   flight: FlightResponse;
-  seat: FlightSeatResponse;
+  seat: FlightSeatResponse | null;
   passengerId?: number;
   passengerName?: string;
   passenger?: PassengerResponse;
@@ -265,10 +265,7 @@ export interface HoldSeatsResponse {
 // Response types — Payment module
 // Source: com.thanh.backend.payment.dto.response.*
 //
-// NOTE: PaymentResponse.qrCode — the backend field exists but the data format
-// (URL vs base64 vs VietQR payload string) is not confirmed by the current
-// implementation. Typed as string | undefined until reconciled.
-// TODO: Confirm qrCode format with backend once PayOS integration is complete.
+// PaymentResponse.qrCode is the payOS VietQR/EMV payload; encode locally.
 // ---------------------------------------------------------------------------
 
 export interface PaymentResponse {
@@ -282,7 +279,7 @@ export interface PaymentResponse {
   status: PaymentStatus;
   refundStatus: RefundStatus;
   paymentUrl?: string;
-  /** Format unresolved: may be a URL, base64 image, or VietQR payload string. */
+  /** Raw payOS VietQR/EMV payload. Never rebuild bank details from client constants. */
   qrCode?: string;
   expiredAt?: string;  // OffsetDateTime -> ISO-8601
   paidAt?: string;
@@ -292,8 +289,8 @@ export interface PaymentResponse {
 export interface PaymentStatusResponse {
   bookingId: number;
   bookingStatus: BookingStatus;
-  paymentStatus: string; // raw string from backend — use PaymentStatus union when confirmed
-  payment: PaymentResponse;
+  paymentStatus: PaymentStatus | "NOT_CREATED";
+  payment: PaymentResponse | null;
 }
 
 // ---------------------------------------------------------------------------
