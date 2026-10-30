@@ -1,205 +1,165 @@
-<div align="center">
-  <h1>✈️ Skyway - Modern Flight Booking Platform</h1>
-  <p><strong>A full-stack flight booking portfolio project</strong></p>
+# Flight Booking System
 
-  [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org/)
-  [![Spring Boot](https://img.shields.io/badge/Spring_Boot-3.5-6DB33F?logo=spring)](https://spring.io/)
-  [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-336791?logo=postgresql)](https://postgresql.org/)
-  [![Redis](https://img.shields.io/badge/Redis-7.0-DC382D?logo=redis)](https://redis.io/)
-  [![PayOS](https://img.shields.io/badge/Payment-PayOS-blue)](#)
-</div>
+Java backend engineering through a complete flight booking workflow.
 
----
+![Java 21](https://img.shields.io/badge/Java-21-334155?style=flat-square&logo=openjdk&logoColor=white)
+![Spring Boot 3.5](https://img.shields.io/badge/Spring_Boot-3.5-334155?style=flat-square&logo=springboot&logoColor=white)
+![Next.js 16](https://img.shields.io/badge/Next.js-16-334155?style=flat-square&logo=nextdotjs&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-334155?style=flat-square&logo=postgresql&logoColor=white)
+![Redis 7](https://img.shields.io/badge/Redis-7-334155?style=flat-square&logo=redis&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-334155?style=flat-square&logo=typescript&logoColor=white)
 
-## 🌐 Live Demo
-Deployment URLs and hosting integration have not been verified in this repository checkpoint.
-Local Swagger UI is available at `http://localhost:8080/swagger-ui.html` after backend setup.
+**[Live Demo ↗](https://skywaybooking.vercel.app/)** · [Technical Highlights](#technical-highlights) · [Run Locally](#run-locally) · [Documentation](#documentation)
 
----
+A full-stack flight booking application for searching flights, selecting seats, managing passengers and completing checkout through payOS. Built with a Spring Boot backend and Next.js frontend, it focuses on consistent reservations under concurrent requests and asynchronous payment confirmation.
 
-## 📖 Project Overview
-Skyway is a full-stack flight booking system built to handle real-world aviation business logic. It provides a seamless user experience for searching flights, selecting seats, managing passenger details, and processing secure payments. The architecture is designed to handle high concurrency and ensure data consistency during the checkout phase.
+Flights marked `DEMO` are simulated inventory. Printed e-tickets are demo booking confirmations, not airline boarding passes.
 
----
+## Features
 
-## 🚀 Key Features
-* **Dynamic Flight Search:** Multi-criteria search for both One-Way and Round-Trip flights.
-* **Interactive Seat Mapping:** Visual cabin layout allowing precise seat selection.
-* **Smart Passenger Directory:** Auto-saves and autofills returning passenger information.
-* **Demo E-Tickets:** Displays backend-issued tickets after payment confirmation; these are not airline boarding passes.
-* **My Bookings Dashboard:** Users can manage and view their flight itineraries.
+- **Flight discovery:** domestic/international airport data, one-way and round-trip search, airline/fare/time filters and airport-local departure/arrival times.
+- **Seat selection:** economy/business seat maps, auto-assignment and temporary holds after sign-in.
+- **Passenger management:** adult/child/infant validation, guardian selection, saved passenger quickfill and optional baggage, meal and insurance add-ons.
+- **Booking and payment:** backend-calculated totals, booking references, payOS QR/checkout links and status recovery after reload.
+- **Personal bookings:** history, payment continuation, pending-booking cancellation and printable confirmed tickets.
+- **Authentication:** registration, login, refresh and logout with account-bound checkout cleanup.
+- **Administration APIs:** airport, airline, aircraft and flight management.
 
----
+Confirmation notifications are recorded in the database; email delivery is not implemented. Voucher application and refund execution remain planned workflows.
 
-## 🧠 Technical Highlights & Best Practices
+## Technical Highlights
 
-To ensure system reliability resembling real-world OTAs (like Traveloka or Agoda), this project implements several advanced technical patterns:
+- **Concurrency-safe allocation:** Redis leases work with persisted ownership, expiry checks and conditional seat updates to protect competing reservations.
+- **Fixed hold deadlines:** retries reuse a live hold without extending its expiry; stale cleanup must not release a newer hold.
+- **Transaction consistency:** booking records, legs, passengers, tickets and seat claims commit together. Provider network calls run outside payment preparation/attachment transactions.
+- **Idempotent payment confirmation:** verified receipts are checked against the payable amount and deadline; duplicate callbacks do not issue tickets again, and late receipts cannot reopen cancelled bookings.
+- **Session lifecycle:** memory-held access tokens, HttpOnly refresh cookies and stale-response checks protect logout and account switching.
+- **Recovery after uncertain requests:** checkout avoids automatically resending a booking request whose previous outcome is unknown.
 
-### 1. Distributed Seat Locking (Concurrency Control)
-When thousands of users hunt for cheap tickets simultaneously, multiple users might select the same seat.
-* **The Solution:** We utilize **Redis `SETNX`** (Set if Not eXists) as a distributed lock.
-* **Mechanism:** The backend coordinates Redis leases with persisted seat ownership, expiry and database locks. Lease generation checks prevent cleanup from releasing a newer hold. Redis expiry alone does not establish seat availability; booking/payment transitions and cleanup reconcile database state. Hold TTL is configurable; payment uses the booking's backend deadline.
+## Tech Stack
 
-### 2. Secure Webhook Processing (Payment Integrity)
-Payments are processed via **PayOS (VietQR)**. The webhook listener is hardened against multiple attack vectors:
-* **Idempotency:** Verified webhook events are reconciled against persisted payment state. Valid duplicate notifications do not issue tickets again, and late payments cannot reopen a terminal booking.
-* **Amount Verification:** The system strictly verifies that the amount reported by the webhook matches the locked `totalAmount` in the database (`data.getAmount() == lockedPayment.getAmount()`). This prevents attackers from manually calling the webhook with a manipulated amount (e.g., paying 10,000 VND for a 5,000,000 VND ticket).
-* **Atomicity:** Updating the Payment, Booking, and issuing Tickets are wrapped in a single Database Transaction.
+| Area | Technologies and purpose |
+| --- | --- |
+| Backend | Java 21, Spring Boot 3.5, Spring Security, Spring Data JPA and Bean Validation. |
+| Frontend | Next.js 16 App Router, React 19, TypeScript and Tailwind CSS. |
+| Persistence | PostgreSQL with Flyway migrations for durable business records and schema evolution. |
+| Temporary state | Redis 7 for seat leases and authentication-related state. |
+| Payments | payOS SDK, QR checkout and verified webhooks. |
+| Testing | JUnit, Mockito and PostgreSQL/Redis Testcontainers; Node/jsdom regressions and Playwright browser smoke. |
+| Tooling | Maven Wrapper, pnpm, Docker Compose and GitHub Actions. |
 
----
-
-## 🏗 System Architecture
+## Architecture
 
 ```mermaid
-graph TD
-    Client[Next.js Client] -->|REST API / JWT| Gateway(Spring Boot API)
+flowchart LR
+    Browser["Browser"]
+    Frontend["Next.js frontend<br/>UI and API proxy"]
+    Backend["Spring Boot<br/>Modular monolith"]
+    DB[(PostgreSQL)]
+    Redis[(Redis)]
+    PayOS["payOS"]
 
-    subgraph Backend Services
-        Gateway --> Auth[Auth Service]
-        Gateway --> Flight[Flight Search Service]
-        Gateway --> Booking[Booking Service]
-        Gateway --> Payment[Payment Service]
-    end
-
-    Auth <--> Redis[(Redis)]
-    Booking <-->|SETNX Lock| Redis
-
-    Auth <--> Postgres[(PostgreSQL)]
-    Flight <--> Postgres
-    Booking <--> Postgres
-    Payment <--> Postgres
-
-    Payment -.->|Create Payment Link| PayOS[PayOS Gateway]
-    PayOS -.->|Webhook Callback| Payment
+    Browser <-->|Pages and API requests| Frontend
+    Frontend <-->|REST /api/v1| Backend
+    Backend <--> DB
+    Backend <--> Redis
+    Backend -->|Checkout link| PayOS
+    PayOS -->|Webhook verified by backend| Backend
 ```
 
----
+The backend modules share one application and database. Browser API calls use a same-origin Next.js rewrite; booking, pricing and authorization decisions remain in Spring Boot. The frontend polls persisted payment status, so a browser redirect alone never confirms payment.
 
-## 📂 Directory Structure
-
-```text
-flight-booking-system/
-├── backend/                       # Spring Boot Application
-│   ├── src/main/java/.../backend/
-│   │   ├── auth/                  # JWT, Security Filters, Users
-│   │   ├── booking/               # Core booking logic, Seat hold, Tickets
-│   │   ├── flight/                # Flight search, Airlines, Airports
-│   │   ├── payment/               # PayOS integration, Webhooks
-│   │   └── common/                # Exceptions, Configs, Responses
-│   └── src/main/resources/
-│       └── db/migration/          # Flyway SQL migrations
-│
-├── frontend/                      # Next.js Application
-│   ├── app/                       # App Router (Pages & Layouts)
-│   ├── components/                # Reusable UI components (Booking, Seats, etc.)
-│   ├── lib/                       # API clients, Context, Utils
-│   └── types/                     # TypeScript interfaces
-│
-└── docs/                          # System documentation & API Plans
-```
-
----
-
-## 🛠 Local Development Setup
-
-*While the live demo is available, you can also run this project locally to inspect the codebase.*
+## Run Locally
 
 ### Prerequisites
-* Java JDK 21; use the Maven wrapper in `backend/`
-* Node.js 24 & pnpm 12.3.4, matching frontend CI
-* PostgreSQL (Running on port 5432)
-* Redis (Running on port 6379)
 
-### 1. Run the Backend
-```bash
+- JDK 21.
+- Node.js 24 and pnpm 12.3.4, matching frontend CI.
+- Docker with Docker Compose for PostgreSQL 17 and Redis 7.
+- OpenSSL for the example local JWT-key command, and your payOS development integration credentials.
+
+### 1. Start local services
+
+```sh
+git clone https://github.com/thannthai/flight-booking-system.git
+cd flight-booking-system
+docker compose up -d postgres redis
+```
+
+Wait for PostgreSQL and Redis to finish starting. The backend defaults match [docker-compose.yml](docker-compose.yml): PostgreSQL database `flight_booking` on port 5432 and Redis on port 6379. Use `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` and `SPRING_DATA_REDIS_*` to override them.
+
+### 2. Start the backend
+
+In a terminal at the repository root, replace the payOS placeholders with your development values:
+
+```sh
 cd backend
-# Export the required environment variables from application.yaml using local/test values.
-# Spring Boot does not automatically load backend/.env.
-# The application automatically runs Flyway migrations to setup the DB schema
+export JWT_SECRET="$(openssl rand -base64 32)"
+export PAYOS_CLIENT_ID='your-development-client-id'
+export PAYOS_API_KEY='your-development-api-key'
+export PAYOS_CHECKSUM_KEY='your-development-checksum-key'
+export PAYOS_RETURN_URL='http://localhost:3000/payment/success'
+export PAYOS_CANCEL_URL='http://localhost:3000/payment/cancel'
 ./mvnw spring-boot:run
 ```
-*API will run on `http://localhost:8080`*
 
-### 2. Run the Frontend
-```bash
+The API runs at `http://localhost:8080`; Flyway applies migrations at startup. Spring Boot reads exported variables and does not automatically load `backend/.env`. Keep credentials out of Git. Payment confirmation requires a configured, publicly reachable webhook; automated payment tests mock the gateway.
+
+### 3. Start the frontend
+
+In another terminal at the repository root:
+
+```sh
+npm install --global pnpm@12.3.4
 cd frontend
-npx --yes pnpm@12.3.4 install --frozen-lockfile
-
-# Copy the template if .env.local does not already exist; preserve existing local configuration.
+pnpm install --frozen-lockfile
 test -f .env.local || cp environment.example .env.local
-# Browser calls /api/v1; Next proxies to server-only BACKEND_API_URL.
-
-npx --yes pnpm@12.3.4 run dev
-```
-*Client will run on `http://localhost:3000`*
-
----
-<div align="center">
-  <i>Developed with ❤️ by Thai Chi Thanh</i>
-</div>
-## Persistent demo flights
-
-Flights with `source=DEMO` are simulated schedules and prices, not official airline inventory.
-The optional Java generator stores a rolling 30-local-day window in PostgreSQL. It runs at
-startup and every hour; expired slots (including a two-hour departure buffer) are skipped.
-It never updates/deletes existing flights, seats, bookings, tickets or payments.
-
-The default YAML roster covers VN/VJ/QH, with one domestic/international return pair per
-configured airline per day, alternating by calendar date. Existing airlines must already
-exist; the generator never creates or updates airline master records. Flight and seat counts
-depend on the configured roster, capacity and available aircraft. A missing or
-unsuitable aircraft can use an insert-only `DEMO-<CODE>-R<outbound-slot>` fallback (180 seats). Missing
-airports/airlines or runtime errors are logged and isolated. A database outage stops that
-reconciliation attempt, not the backend. Flyway/database startup failures still follow
-Spring Boot's normal startup behavior.
-
-Enable only against a dedicated local/dev or demo database:
-
-```text
-SPRING_PROFILES_ACTIVE=demo
-DEMO_FLIGHTS_ENABLED=true
-DEMO_FLIGHTS_ALLOWED_JDBC_URL=<exact same JDBC URL as DB_URL>
-DEMO_FLIGHTS_WINDOW_DAYS=30
-DEMO_FLIGHTS_INTERVAL_MS=3600000
-DEMO_FLIGHTS_MAX_FLIGHTS_PER_DAY=12
-DEMO_FLIGHTS_MAX_WINDOW_SEATS=90000
+pnpm dev
 ```
 
-Disabled is the default. `demo`/`dev` profile and exact datasource URL opt-in are required;
-`prod`/`production` profiles are rejected before generator writes. URL matching is an
-accidental-configuration guard, not a substitute for separate database credentials.
-Never put credentials into committed configuration or logs. Test locally before enabling
-these variables on Render; this feature does not require direct SQL seeding every day.
+Open **http://localhost:3000**. The template keeps browser calls at `/api/v1` and sets server-only `BACKEND_API_URL=http://localhost:8080/api/v1`.
 
-`backend/src/main/resources/demo-flight-templates.yaml` defines airline rosters, stable
-base36 two-character direction slots, effective dates, routes, duration, turnaround,
-prices and candidate registrations. Append a schedule version with an effective date
-after the last generated date when changing rosters; retain prior versions. An airline
-without a configured entry is not assigned inferred routes. Round-robin admission respects
-the configured daily capacity; missing roster members
-leave empty slots. Configured roster size must permit both route categories within 30 days.
-Only new occurrences use new configuration. Slot identities must not be reassigned.
+Fresh migrations seed airports, not flight schedules. Inventory must be provisioned through admin APIs using an existing `ROLE_ADMIN` account; registration creates `ROLE_USER`. The optional demo generator requires existing configured airlines and explicit local/demo opt-in; its templates are in [demo-flight-templates.yaml](backend/src/main/resources/demo-flight-templates.yaml) and its activation settings in [application.yaml](backend/src/main/resources/application.yaml).
 
-V9 adds the DEMO source constraint and a partial unique flight-number index. Flight and
-all seats commit atomically. A transaction-scoped PostgreSQL advisory lock serializes
-budget check/insert across generator instances; unique constraints enforce idempotency.
-No Redis holds are read or changed. This lock does not coordinate manual admin aircraft
-scheduling; suitability checks inspect known overlapping flights, not a global aircraft
-reservation system. Existing occurrence conflicts are skipped rather than repaired.
+## API Documentation
 
-Public search excludes departed flights; admin/history search retains historical access.
-Frontend results identify DEMO flights as simulated inventory.
+After starting the backend:
 
-No old flights are cleaned up in v1. The 90,000-seat cap applies only to the current demo
-window, not all historical data. Monitor retained database growth and reconciliation logs
-(`created`, `skipped`, `failed`, dates and per-occurrence failure reason). Retention requires
-a separate decision. Render sleep is recovered by startup reconciliation; a paused Supabase
-project must be resumed independently. This feature cannot guarantee free-tier uptime.
+- [Swagger UI](http://localhost:8080/swagger-ui.html)
+- [OpenAPI JSON](http://localhost:8080/v3/api-docs)
 
+These are local development endpoints. Protected APIs require a Bearer access token; administrative APIs require `ROLE_ADMIN`.
 
-The active FlightSource values are MANUAL and DEMO. V10 removes unused CRAWLER support
-without modifying prior migration checksums. If historical CRAWLER rows exist, the
-migration refuses to relabel them automatically; classify those records explicitly
-before deploying this change. Pushing Git does not copy local database rows to Supabase.
-Flyway and the enabled generator execute when the backend starts against its configured
-datasource. The demo YAML contains recurring templates, not persisted flights.
+## Testing
+
+From `backend/`, with Docker available for integration tests:
+
+```sh
+./mvnw clean verify
+```
+
+From `frontend/`:
+
+```sh
+pnpm test
+BACKEND_API_URL=https://backend.example.invalid/api/v1 pnpm exec next typegen --webpack
+pnpm typecheck
+pnpm lint
+pnpm audit --prod
+BACKEND_API_URL=https://backend.example.invalid/api/v1 pnpm build
+```
+
+The HTTPS placeholder is for build/type-generation checks without backend calls. Build intentionally uses Webpack. After building, browser smoke can run with:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:e2e
+```
+
+Integration tests use isolated services; browser smoke uses mocked APIs. Neither requires real money transfers or production data.
+
+## Documentation
+
+- [Project Specification](docs/01-project-specification.md) — features, scope and key business rules.
+- [System Architecture](docs/02-system-architecture.md) — module boundaries, integrations and design decisions.
+- [Database Design](docs/03-database-design.md) — tables, relationships and integrity protections.
