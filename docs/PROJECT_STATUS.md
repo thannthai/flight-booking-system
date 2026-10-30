@@ -3,6 +3,13 @@
 Cập nhật: **2026-10-30 +07:00**. Branch `main`; baseline trước đợt commit này là `4a2fe48`. Checkpoint dưới ghi verification ngay trước commit/push được người dùng yêu cầu; dùng Git log và upstream để xác nhận commit đã publish. Các checkpoint cũ là lịch sử, không phải trạng thái hiện tại.
 
 
+## Vercel install failure investigation — 2026-10-30
+
+- User-provided Vercel Build Logs for published commit `b7a4168` confirm `ERR_PNPM_IGNORED_BUILDS` for `unrs-resolver@1.12.2` after successful lockfile verification/downloads. This matches the clean local reproduction below; failure occurs during install, before the application build.
+- Reproduced a concrete clean-install failure locally using Node24.3.0 / pnpm12.3.4, copied manifests, empty node_modules/store/cache and CI=true: packages downloaded and lockfile passed supply-chain policies, then `ERR_PNPM_IGNORED_BUILDS` for `unrs-resolver@1.12.2`. The earlier pre-commit install reused existing local dependencies/cache and did not expose this first-install approval requirement.
+- Inspected the resolver postinstall/native-binding preparation and added only `allowBuilds: { unrs-resolver: true }` to frontend/pnpm-workspace.yaml. Package versions, manifest, lockfile and other security policies unchanged. A second empty-node_modules install using downloaded tarballs PASS, postinstall executed, exit0; no blanket script approval or disabled frozen-lockfile.
+- Copied tracked frontend source into that isolated install: tests80/80 PASS, typegen/typecheck PASS, lint0 errors/38 warnings, production Webpack build PASS with non-live HTTPS upstream. Logs `/tmp/flight-vercel-install-7nba3z2q/install.log` (before) and `/tmp/flight-vercel-fixed-l4uq8s0z/{install,tests,typegen,typecheck,lint,build}.log` (after). Local macOS verification; Vercel Linux build/deployment after the fix remains NOT VERIFIED. No backend/business/UI changes or real provider/database calls. User authorized a focused commit/push of this fix and status update; Git history/remote are publication evidence, and push may trigger hosting auto-deploy. No manual deployment.
+
 ## Final pre-commit verification — 2026-10-30
 
 - Reviewed staged/unstaged/untracked changes against HEAD; source, tests, frontend CI/config, instruction/docs and intended deletions classified. Backend source/API contracts/Flyway migrations unchanged. Full inventory and assessment: `docs/testing/FINAL_PRE_COMMIT_VERIFICATION.md`.

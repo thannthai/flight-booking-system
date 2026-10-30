@@ -1,5 +1,9 @@
 pmOnFail: ignore
 
+# Native resolver used by eslint-import-resolver-typescript; required on clean CI installs.
+allowBuilds:
+  unrs-resolver: true
+
 minimumReleaseAgeExclude:
   - '@next/*'
   - next
