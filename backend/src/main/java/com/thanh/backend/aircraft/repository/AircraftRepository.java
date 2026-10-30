@@ -19,7 +19,7 @@ public interface AircraftRepository extends JpaRepository<Aircraft, Long> {
 
     @Query(value = """
             SELECT a.* FROM aircrafts a
-            JOIN airlines al ON a.airline_id = al.id WHERE
+            JOIN airlines al ON a.airline_code_id = al.id WHERE
             (cast(:search as varchar) IS NULL OR
             unaccent(LOWER(a.model)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
             unaccent(LOWER(a.registration_no)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
@@ -28,7 +28,7 @@ public interface AircraftRepository extends JpaRepository<Aircraft, Long> {
             """,
             countQuery = """
             SELECT COUNT(*) FROM aircrafts a
-            JOIN airlines al ON a.airline_id = al.id WHERE
+            JOIN airlines al ON a.airline_code_id = al.id WHERE
             (cast(:search as varchar) IS NULL OR
             unaccent(LOWER(a.model)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR
             unaccent(LOWER(a.registration_no)) LIKE unaccent(LOWER(CONCAT('%', cast(:search as varchar), '%'))) OR

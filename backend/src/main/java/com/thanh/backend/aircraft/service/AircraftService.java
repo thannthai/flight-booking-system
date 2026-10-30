@@ -12,7 +12,9 @@ import com.thanh.backend.common.exception.ErrorCode;
 import com.thanh.backend.flight.repository.FlightRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -32,7 +34,15 @@ public class AircraftService {
     @Transactional(readOnly = true)
     public Page<AircraftResponse> getAircrafts(String search, Pageable pageable) {
         String sanitizedSearch = StringUtils.hasText(search) ? search.trim() : null;
-        return aircraftRepository.searchAircrafts(sanitizedSearch, pageable)
+        // Native SQL sorting uses column names, while the API uses entity properties.
+        Sort sqlSort = Sort.by(pageable.getSort().stream()
+                .map(order -> "registrationNo".equals(order.getProperty())
+                        ? order.withProperty("registration_no") : order)
+                .toList());
+        Pageable sqlPageable = pageable.isPaged()
+                ? PageRequest.of(pageable.getPageNumber(), pageable.getPageSize(), sqlSort)
+                : Pageable.unpaged(sqlSort);
+        return aircraftRepository.searchAircrafts(sanitizedSearch, sqlPageable)
                 .map(aircraftMapper::toResponse);
     }
 
