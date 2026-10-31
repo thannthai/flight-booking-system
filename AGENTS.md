@@ -2,7 +2,7 @@
 
 ## Working rules
 
-- Read [PROJECT_STATUS.md](docs/PROJECT_STATUS.md), `git status`, recent commits and relevant source/tests before continuing work. Handoffs and earlier AI reports are not proof of correctness.
+- Read `git status`, recent commits, relevant project documentation and source/tests before continuing work. If a local handoff is available, verify it against the source; earlier AI reports are not proof of correctness.
 - Preserve existing local changes. Make focused changes within the requested scope; audit-only means no implementation. Confirm material changes to business rules, API contracts or architecture before implementing them.
 - Follow existing module boundaries and conventions. Explain trade-offs; avoid framework rewrites, new patterns or dependencies without a concrete need.
 - Communicate in Vietnamese; keep code, filenames and technical identifiers in English.
@@ -15,9 +15,9 @@
 | `backend/src/main/resources/` | `application.yaml` configuration, `db/migration/` Flyway scripts, demo-flight templates. |
 | `frontend/` | Next.js App Router, React, TypeScript and Tailwind. `app/` routes/composition; `components/` domain UI/controllers; `lib/` API/auth coordination, workflow models and helpers; `types/api.ts` API DTOs; `tests/` Node/jsdom; `e2e/` Playwright. |
 | `.github/workflows/` | Separate backend and frontend verification. Deployment packaging: `backend/Dockerfile`, `frontend/vercel.json`; local services: `docker-compose.yml`. |
-| `docs/` | Status and audit/verification evidence. [api-plan.md](docs/api-plan.md) is a design reference; verify contracts against controllers, DTOs, enums and migrations. |
+| `docs/` | Project specification, system architecture and database design. Verify contracts and business rules against controllers, DTOs, enums and migrations. |
 
-Use `backend/pom.xml` and `frontend/package.json` for actual versions. Read relevant installed Next.js docs in `frontend/node_modules/next/dist/docs/` before frontend changes. `frontend/AGENTS.md` is maintained by Next.js; root `CLAUDE.md` imports this guide.
+Use `backend/pom.xml` and `frontend/package.json` for actual versions. Read relevant installed Next.js docs in `frontend/node_modules/next/dist/docs/` before frontend changes. `frontend/AGENTS.md` is maintained by Next.js.
 
 ## Invariants to preserve
 
@@ -61,4 +61,4 @@ pnpm test:e2e
 - Add versioned Flyway migrations in `backend/src/main/resources/db/migration/`; do not edit applied migrations or reset schema history to bypass failures. Preserve constraints/data compatibility and JPA `ddl-auto=validate`.
 - Backend environment keys come from `application.yaml`; do not assume `.env` is loaded automatically. Frontend template: `frontend/environment.example` → ignored `.env.local`. Browser calls `/api/v1`; server-only `BACKEND_API_URL` ends in `/api/v1` and requires HTTPS in production. Check cookie/CORS/callback configuration before deployment; repository config does not prove hosting settings.
 - Never commit/log credentials, tokens, private keys, real payment details or sensitive passenger data. Keep `.env*`, `backend/target/`, `node_modules/`, `.next/`, `next-env.d.ts`, `*.tsbuildinfo` and browser artifacts ignored. Generate Next types rather than editing generated declarations.
-- Record verified milestones, open issues and commands in `docs/PROJECT_STATUS.md`; keep transient progress/test counts out of this guide. Detailed frontend evidence and deployment checklists live in `docs/testing/`. Ask before destructive operations or production-data changes; commit/push/deploy only when requested.
+- For multi-session work, leave a concise local handoff with verified milestones, open issues and commands; keep transient progress/test counts out of this guide. Ask before destructive operations or production-data changes; commit/push/deploy only when requested.

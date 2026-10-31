@@ -19,3 +19,10 @@ logs/
 
 # Java compiled artifacts
 *.class
+
+# Local agent handoff and historical documentation
+/CLAUDE.md
+/docs/PROJECT_STATUS.md
+/docs/api-plan.md
+/docs/testing/
+/docs/technical/
