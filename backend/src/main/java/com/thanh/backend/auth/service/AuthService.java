@@ -95,9 +95,8 @@ public class AuthService {
      * Refresh Token (Cơ chế Token Rotation).
      * 1. Parse/Verify chữ ký và hạn của Refresh Token cũ.
      * 2. Tìm user từ DB theo email (subject) trong token.
-     * 3. Validate sự tồn tại của Refresh Token này trong Redis.
-     * 4. Revoke (xóa) Refresh Token cũ để tránh replay attack.
-     * 5. Issue cặp token mới (Access + Refresh mới) và lưu vào Redis.
+     * 3. Validate loại token và atomic consume bản ghi Redis để tránh replay.
+     * 4. Chỉ request consume thành công được cấp cặp token mới và lưu vào Redis.
      */
     @Transactional
     public AuthTokens refresh(String refreshToken) {
@@ -116,11 +115,8 @@ public class AuthService {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new AppException(ErrorCode.USER_NOT_FOUND));
 
-        // Kiểm tra tính hợp lệ của Refresh Token trong Redis
-        jwtService.validateRefreshToken(user.getId(), refreshToken);
-
-        // Xóa Refresh Token cũ ra khỏi Redis (Rotation)
-        jwtService.revokeRefreshToken(user.getId(), refreshToken);
+        // Validate trước khi atomic consume: token chỉ có một request thắng rotation.
+        jwtService.consumeRefreshToken(user.getId(), refreshToken);
 
         // Sinh cặp token mới và lưu vào Redis
         return issueTokens(user);

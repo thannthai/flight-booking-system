@@ -1,6 +1,15 @@
 import type { ApiResponse, AuthResponse, UserResponse, LoginRequest, RegisterRequest } from '@/types/api'
 import { ApiError, getBaseUrl, fetchWithTimeout, requestJson } from '@/lib/http'
 
+// Serialize shared-cookie mutations across same-origin tabs. Tokens stay in memory.
+// Older/non-secure browsers retain per-tab single-flight; backend still rejects replay.
+function withAuthCookieLock<T>(operation: () => Promise<T>): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request('skyway-auth-cookie', operation)
+  }
+  return operation()
+}
+
 export interface AuthState { token: string | null; user: UserResponse | null }
 export function isTokenExpired(token: string | null): boolean {
   if (!token) return true
@@ -49,7 +58,8 @@ export function createAuthSession(clearPrivateSession: () => void) {
     if (isSignedOut()) return Promise.resolve(null)
     if (refreshPromise) return refreshPromise
     const version = epoch
-    const operation = (async () => {
+    const operation = withAuthCookieLock(async () => {
+      if (version !== epoch || isSignedOut()) return null
       try {
         const response = await fetchWithTimeout(`${getBaseUrl()}/auth/refresh`, { method: 'POST', credentials: 'include', cache: 'no-store' })
         if (response.ok) {
@@ -63,7 +73,7 @@ export function createAuthSession(clearPrivateSession: () => void) {
       } catch { /* Network failure does not erase a still-valid session. */ }
       if (version === epoch && !getAccessToken()) publish(null, null)
       return null
-    })()
+    })
     refreshPromise = operation
     void operation.finally(() => { if (refreshPromise === operation) refreshPromise = null }).catch(() => {})
     return operation
@@ -71,7 +81,7 @@ export function createAuthSession(clearPrivateSession: () => void) {
 
   async function request<T>(method: string, path: string, body?: unknown, isRetry = false): Promise<T> {
     const version = epoch
-    const authPath = path.startsWith('/auth/')
+    const authPath = path.startsWith('/auth/') || /^\/demo\/login\/[AB]$/.test(path)
     const assertCurrent = () => {
       if (!authPath && version !== epoch) throw new ApiError('Account changed.', 'SESSION_CHANGED', 401)
     }
@@ -98,10 +108,10 @@ export function createAuthSession(clearPrivateSession: () => void) {
     // Drain any rotation before revoking the cookie that is now in the browser.
     await refreshPromise
     try {
-      const response = await fetchWithTimeout(`${getBaseUrl()}/auth/logout`, {
+      const response = await withAuthCookieLock(() => fetchWithTimeout(`${getBaseUrl()}/auth/logout`, {
         method: 'POST', credentials: 'include',
         headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
-      })
+      }))
       if (!response.ok) throw new Error('Signed out locally; server sign-out could not be confirmed.')
     } finally { broadcastAuth('signout') }
   }
@@ -109,10 +119,13 @@ export function createAuthSession(clearPrivateSession: () => void) {
   function broadcastAuth(action: 'signin' | 'signout') {
     if (typeof window !== 'undefined') { try { localStorage.setItem('skyway_auth_changed', JSON.stringify({ action, time: Date.now(), nonce: Math.random() })) } catch { /* Cross-tab broadcast is unavailable without storage. */ } }
   }
-  async function authenticate(path: string, payload: LoginRequest | RegisterRequest): Promise<AuthResponse> {
+  async function authenticate(path: string, payload: LoginRequest | RegisterRequest | undefined): Promise<AuthResponse> {
     await refreshPromise
     const version = ++epoch
-    const result = await request<AuthResponse>('POST', path, payload)
+    const result = await withAuthCookieLock(async () => {
+      if (version !== epoch) throw new ApiError('Authentication changed. Please try again.', 'SESSION_CHANGED', 401)
+      return request<AuthResponse>('POST', path, payload)
+    })
     if (version !== epoch) throw new ApiError('Authentication changed. Please try again.', 'SESSION_CHANGED', 401)
     signedOut = false
     if (typeof window !== 'undefined') { try { sessionStorage.removeItem('skyway_signed_out') } catch { /* Memory state is sufficient. */ } }
@@ -123,6 +136,7 @@ export function createAuthSession(clearPrivateSession: () => void) {
 
   return {
     request, getAuthState, getServerAuthState, subscribeAuth, setAccessToken, getAccessToken, getCurrentUser, invalidateAuth, refreshAccessToken,
+    loginDemo: (alias: 'A' | 'B') => authenticate(`/demo/login/${alias}`, undefined),
     login: (payload: LoginRequest) => authenticate('/auth/login', payload),
     register: (payload: RegisterRequest) => authenticate('/auth/register', payload), logout,
   }

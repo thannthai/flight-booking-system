@@ -1,9 +1,12 @@
 'use client'
 
+import Image from 'next/image'
+
 import { useDialog } from '@/lib/use-dialog'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { X, Plane, AlertCircle, RefreshCw, Ticket, ChevronRight, Ban } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { bookingStatusLabel, expiredBooking } from '@/lib/booking-status'
 import { api } from '@/lib/api'
 import { fetchAllPages } from '@/lib/search'
 import { hasUnresolvedBooking, storedBookingId, clearBookingAttempt } from '@/lib/payment'
@@ -17,7 +20,11 @@ interface MyBookingsModalProps {
   onPayBooking?: (booking: BookingResponse) => void
 }
 
-export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsModalProps) {
+export function MyBookingsModal(props: MyBookingsModalProps) {
+  return props.isOpen ? <MyBookingsContent {...props} /> : null
+}
+
+function MyBookingsContent({ isOpen, onClose, onPayBooking }: MyBookingsModalProps) {
   const dialogRef = useDialog(isOpen, onClose)
   const [bookings, setBookings] = useState<BookingResponse[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,12 +34,12 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
   // Selected booking for Boarding Pass Modal
   const [boardingPassBooking, setBoardingPassBooking] = useState<BookingResponse | null>(null)
   const [cancellingId, setCancellingId] = useState<number | null>(null)
+  const [now, setNow] = useState(() => Date.now())
 
-  const fetchBookings = () => {
-    setLoading(true)
-    setError(null)
-    fetchAllPages<BookingResponse>('/bookings/my?sort=createdAt,desc', api.get)
+  const loadBookings = useCallback(() => {
+    return fetchAllPages<BookingResponse>('/bookings/my?sort=createdAt,desc', api.get)
       .then(res => {
+        setNow(Date.now())
         setBookings(res)
         setLoading(false)
       })
@@ -41,12 +48,22 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
         setError(err.message || 'Could not load your bookings')
         setLoading(false)
       })
+  }, [])
+
+  const fetchBookings = () => {
+    setLoading(true)
+    setError(null)
+    void loadBookings()
   }
 
   useEffect(() => {
-    if (isOpen) {
-      fetchBookings()
-    }
+    void loadBookings()
+  }, [loadBookings])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
   }, [isOpen])
 
   if (!isOpen) return null
@@ -60,8 +77,8 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
     try {
       await api.cancelBooking(bookingId)
       fetchBookings()
-    } catch (err: any) {
-      alert(err.message || 'Failed to cancel booking')
+    } catch (err: unknown) {
+      alert((err instanceof Error && err.message) || 'Failed to cancel booking')
     } finally {
       setCancellingId(null)
     }
@@ -122,7 +139,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                {tab === 'ALL' ? 'All Bookings' : tab === 'COMPLETED' ? 'Confirmed' : tab === 'PENDING' ? 'Pending Payment' : 'Cancelled'}
+                {tab === 'ALL' ? 'All Bookings' : tab === 'COMPLETED' ? 'Confirmed' : tab === 'PENDING' ? 'Pending Payment' : 'Closed'}
               </button>
             ))}
           </div>
@@ -151,7 +168,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                 <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 mb-6">
                   {activeTab === 'ALL'
                     ? "You haven't made any flight bookings yet. Search for a destination to plan your trip!"
-                    : `No bookings found with status ${activeTab.toLowerCase()}.`}
+                    : activeTab === 'CANCELLED' ? 'No closed bookings found.' : `No bookings found with status ${activeTab.toLowerCase()}.`}
                 </p>
                 <Button onClick={onClose} className="rounded-xl bg-[#102a56] hover:bg-slate-800 text-xs font-bold px-6">
                   Book a Flight Now
@@ -162,10 +179,11 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                 const flights = [...new Map((b.tickets || []).filter(t => t.flight).map(t => [t.flight.id, t.flight])).values()]
                 const statusColor = b.status === 'COMPLETED'
                   ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                  : b.status === 'PENDING'
+                  : b.status === 'PENDING' || expiredBooking(b)
                   ? 'bg-amber-50 text-amber-700 border-amber-100'
                   : 'bg-slate-100 text-slate-600 border-slate-200'
 
+                const canContinuePayment = b.status === 'PENDING' && Date.parse(b.paymentDeadline) > now
                 const paxCount = b.passengers?.length || new Set(b.tickets?.map(t => t.passengerId)).size
 
                 return (
@@ -177,9 +195,9 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                     <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 border-b border-slate-100">
                       <div className="flex items-center gap-3">
                         <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">PNR</span>
-                        <span className="font-mono text-lg font-black text-[#102a56] tracking-wider">{b.pnr}</span>
+                        <span className="font-mono text-lg font-black text-[#102a56] tracking-wider">{b.pnr}</span>{b.paymentProvider === 'DEMO' && <span className="text-xs text-amber-800">Demo payment</span>}
                         <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border uppercase ${statusColor}`}>
-                          {b.status}
+                          {bookingStatusLabel(b, now)}
                         </span>
                       </div>
                       <div className="text-xs text-slate-400">
@@ -193,9 +211,9 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                         {flights.length ? flights.map(flight => (
                           <div key={flight.id} className="flex items-center gap-4">
                             <div className="size-10 bg-slate-50 rounded-xl p-1 border border-slate-100 flex items-center justify-center shrink-0">
-                              <img
+                              <Image unoptimized width={32} height={32}
                                 src={`/airlines/${flight.airline?.code}.svg`}
-                                alt={flight.airline?.name}
+                                alt={flight.airline?.name || 'Airline'}
                                 className="h-full w-full object-contain"
                                 onError={(e) => { (e.target as HTMLElement).style.display = 'none' }}
                               />
@@ -239,15 +257,20 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                       </div>
                     </div>
 
+                    {b.status === 'PENDING' && <div className="rounded-xl bg-amber-50 px-4 py-3 text-xs text-amber-900">
+                      <p className="font-semibold">Payment deadline: {new Date(b.paymentDeadline).toLocaleString()}</p>
+                      <p className="mt-1">{canContinuePayment ? 'Seats are held only until this deadline. Choose Continue payment to resume your booking.' : 'The payment deadline has passed. We are checking the final payment result.'}</p>
+                    </div>}
+
                     {/* Bottom Actions or Status Info */}
                     {b.status === 'CANCELLED' ? (
                       <div className="flex flex-wrap items-center justify-between text-xs text-slate-400 pt-3.5 border-t border-slate-100">
                         <span className="flex items-center gap-1.5 text-slate-500 font-medium">
                           <Ban className="size-3.5 text-slate-400" />
-                          Booking cancelled · Seats released
+                          {expiredBooking(b) ? 'Booking expired · Seats released' : 'Booking cancelled · Seats released'}
                         </span>
                         <span className="text-[11px] text-slate-400">
-                          {(b as any).cancelReason || 'Cancelled'}
+                          {expiredBooking(b) ? 'Payment was not completed in time' : b.cancellationReason === 'USER_CANCELLED' ? 'Cancelled at your request' : 'Cancelled'}
                         </span>
                       </div>
                     ) : (
@@ -275,7 +298,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                               <Ban className="size-3.5" />
                               <span>{cancellingId === b.id ? 'Cancelling...' : 'Cancel Booking'}</span>
                             </Button>
-                            {onPayBooking && (
+                            {onPayBooking && canContinuePayment && (
                               <Button
                                 type="button"
                                 onClick={() => {
@@ -284,7 +307,7 @@ export function MyBookingsModal({ isOpen, onClose, onPayBooking }: MyBookingsMod
                                 }}
                                 className="h-10 px-5 rounded-xl bg-[#f59e0b] hover:bg-[#d97706] text-[#102a56] font-bold text-xs cursor-pointer flex items-center gap-2"
                               >
-                                <span>Complete Payment</span>
+                                <span>Continue payment</span>
                                 <ChevronRight className="size-4" />
                               </Button>
                             )}

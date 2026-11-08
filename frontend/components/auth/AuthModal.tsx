@@ -1,8 +1,9 @@
 'use client'
 
 import { useDialog } from '@/lib/use-dialog'
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { ApiError } from '@/lib/api'
 import { 
   X, 
   Mail, 
@@ -11,22 +12,25 @@ import {
   Phone, 
   Eye, 
   EyeOff, 
-  Sparkles, 
   AlertCircle, 
   Loader2 
 } from 'lucide-react'
 
 export function AuthModal() {
+  const { isAuthModalOpen, authModalMode } = useAuth()
+  return isAuthModalOpen ? <AuthModalForm key={authModalMode} initialMode={authModalMode} /> : null
+}
+
+function AuthModalForm({ initialMode }: { initialMode: 'login' | 'register' }) {
   const { 
     isAuthModalOpen, 
-    authModalMode, 
     closeAuthModal, 
     login, 
     register 
   } = useAuth()
 
   const dialogRef = useDialog(isAuthModalOpen, closeAuthModal)
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const [mode, setMode] = useState(initialMode)
   const [showPassword, setShowPassword] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -41,23 +45,6 @@ export function AuthModal() {
   const [regPhone, setRegPhone] = useState('')
   const [regPassword, setRegPassword] = useState('')
 
-  // Sync mode with context and reset state when opening
-  useEffect(() => {
-    if (authModalMode) {
-      setMode(authModalMode)
-    }
-    if (isAuthModalOpen) {
-      setError(null)
-      setLoginEmail('')
-      setLoginPassword('')
-      setRegFullName('')
-      setRegEmail('')
-      setRegPhone('')
-      setRegPassword('')
-      setShowPassword(false)
-    }
-  }, [authModalMode, isAuthModalOpen])
-
   if (!isAuthModalOpen) return null
 
   // Password rules validation for register
@@ -67,12 +54,6 @@ export function AuthModal() {
   const hasDigit = /[0-9]/.test(regPassword)
   const hasSpecial = /[@#$%^&+=!]/.test(regPassword)
   const isPasswordValid = hasMinLength && hasUpper && hasLower && hasDigit && hasSpecial
-
-  const handleFillDemo = () => {
-    setLoginEmail('skyway_tester@example.com')
-    setLoginPassword('Password123@')
-    setError(null)
-  }
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -89,9 +70,9 @@ export function AuthModal() {
         password: loginPassword,
       })
       // Modal is closed by login()
-    } catch (err: any) {
-      const msg = err.message || 'Login failed. Please check your credentials.'
-      if (msg.includes('Bad credentials') || err.errorCode === 'INVALID_CREDENTIALS') {
+    } catch (err: unknown) {
+      const msg = (err instanceof Error && err.message) || 'Login failed. Please check your credentials.'
+      if (msg.includes('Bad credentials') || (err instanceof ApiError && err.errorCode === 'INVALID_CREDENTIALS')) {
         setError('Incorrect email or password. Please try again.')
       } else {
         setError(msg)
@@ -129,8 +110,8 @@ export function AuthModal() {
         phone: regPhone.trim(),
         password: regPassword,
       })
-    } catch (err: any) {
-      setError(err.message || 'Registration failed. Please try again.')
+    } catch (err: unknown) {
+      setError((err instanceof Error && err.message) || 'Registration failed. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -245,18 +226,6 @@ export function AuthModal() {
                   {showPassword ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                 </button>
               </div>
-            </div>
-
-            {/* Quick Demo Account Button */}
-            <div className="pt-1">
-              <button
-                type="button"
-                onClick={handleFillDemo}
-                className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-xl border border-amber-200/80 bg-amber-50/70 text-amber-900 hover:bg-amber-100/70 transition-all text-xs font-semibold cursor-pointer shadow-2xs"
-              >
-                <Sparkles className="size-3.5 text-amber-500" />
-                <span>Quick fill demo account (1-click)</span>
-              </button>
             </div>
 
             <button

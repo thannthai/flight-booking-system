@@ -14,7 +14,7 @@ export function createApiClient() {
     post: <T>(path: string, body?: unknown) => session.request<T>('POST', path, body),
     put: <T>(path: string, body?: unknown) => session.request<T>('PUT', path, body),
     delete: <T>(path: string) => session.request<T>('DELETE', path),
-    login: session.login, register: session.register, logout: session.logout,
+    loginDemo: session.loginDemo, login: session.login, register: session.register, logout: session.logout,
     ...createDomainApi(session.request),
   }
   return { ...session, api }

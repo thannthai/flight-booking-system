@@ -1,7 +1,11 @@
 'use client'
 
+import { FlightRouteMap } from '@/components/maps/FlightRouteMap'
+
+import { SkywayBrand } from '@/components/SkywayBrand'
+
 import { useEffect, useState, useMemo } from 'react'
-import { CalendarDays, MapPin, Plane, Plus, Search, Users, Minus, Check } from 'lucide-react'
+import { CalendarDays, MapPin, Plus, Search, Users, Minus, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { api } from '@/lib/api'
 import { fetchAllPages } from '@/lib/search'
@@ -52,7 +56,6 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
 
   useEffect(() => {
     let active = true
-    setAirportError(false)
     fetchAllPages<AirportResponse>('/airports', api.get)
       .then(data => {
         if (!active) return
@@ -91,9 +94,8 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 lg:px-8">
           <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="flex items-center gap-3 cursor-pointer" aria-label="Skyway home">
-            <span className="flex size-10 items-center justify-center rounded-xl bg-[#102a56] text-white shadow-sm"><Plane className="size-5 -rotate-12" /></span>
-            <span className="text-lg font-semibold tracking-tight">skyway<span className="text-[#f59e0b]">.</span></span>
-          </button>
+              <SkywayBrand />
+            </button>
           
           <nav className="flex items-center text-sm font-medium text-slate-500">
             <UserNav />
@@ -101,25 +103,19 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
         </div>
       </header>
 
+
       {/* Hero Section */}
       <section className="mx-auto grid max-w-7xl gap-10 px-5 pb-8 pt-10 lg:grid-cols-[1.1fr_.9fr] lg:items-center lg:px-8 lg:pt-12">
         <div>
-          <p className="mb-4 text-sm font-semibold uppercase tracking-[.2em] text-[#2563eb]">Travel further, feel closer</p>
+          <p className="mb-4 text-sm text-slate-500">Travel further, feel closer</p>
           <h1 className="max-w-2xl text-5xl font-semibold tracking-[-.04em] text-[#102a56] sm:text-6xl">
-            The world is <span className="text-amber-500">closer than ever.</span>
+            The world is closer than ever.
           </h1>
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-slate-500">
             Find the right flight, at the right fare, with a booking experience designed around you.
           </p>
         </div>
-        <div className="relative hidden h-[300px] overflow-hidden rounded-[2rem] shadow-xl lg:block">
-          <img src="https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=1200&q=90" alt="Airplane wing above the clouds" className="size-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-transparent" />
-          <div className="absolute bottom-8 left-8 text-white">
-            <p className="text-sm uppercase tracking-[.2em] text-white/80">Fly beyond</p>
-            <p className="mt-2 text-3xl font-semibold">One flight at a time.</p>
-          </div>
-        </div>
+        <FlightRouteMap from={from} to={to} />
       </section>
 
       {/* Flight Search Section */}
@@ -146,7 +142,7 @@ export function HomePage({ onSearch }: { onSearch: (params: SearchParams) => voi
             </div>
           </div>
 
-          {airportError && <p role="alert" className="text-sm text-red-700 mb-4">Could not load airports. <button onClick={() => setAirportRetry(n => n + 1)} className="underline">Retry</button></p>}
+          {airportError && <p role="alert" className="text-sm text-red-700 mb-4">Could not load airports. <button onClick={() => { setAirportError(false); setAirportRetry(n => n + 1) }} className="underline">Retry</button></p>}
           {/* Search Inputs Grid */}
           <div className="grid gap-3 lg:grid-cols-[1fr_auto_1fr_1fr_1fr_1.2fr] lg:items-center">
             

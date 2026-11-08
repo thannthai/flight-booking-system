@@ -90,7 +90,7 @@ class BookingPaymentCleanupSchedulerTest {
                 .build();
         ReflectionTestUtils.setField(testBooking, "id", 1L);
 
-        testPayment = Payment.builder()
+        testPayment = Payment.builder().provider("PAYOS")
                 .booking(testBooking)
                 .orderCode(1000000002L)
                 .status(PaymentStatus.PENDING)

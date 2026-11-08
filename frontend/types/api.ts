@@ -100,6 +100,7 @@ export type RefundStatus = "NONE" | "REFUND_REQUIRED" | "REFUNDED";
 // ---------------------------------------------------------------------------
 
 export interface UserResponse {
+  demoAlias?: 'A' | 'B' | null;
   id: number;
   email: string;
   fullName: string;
@@ -238,6 +239,8 @@ export interface TicketResponse {
 }
 
 export interface BookingResponse {
+  paymentProvider?: string;
+  cancellationReason?: 'PAYMENT_TIMEOUT' | 'USER_CANCELLED' | 'OTHER' | null;
   id: number;
   pnr: string;
   contactName: string;
@@ -281,6 +284,11 @@ export interface PaymentResponse {
   paymentUrl?: string;
   /** Raw payOS VietQR/EMV payload. Never rebuild bank details from client constants. */
   qrCode?: string;
+  bankBin?: string | null;
+  accountNumber?: string | null;
+  accountName?: string | null;
+  transferDescription?: string | null;
+  transferAmount?: number | null;
   expiredAt?: string;  // OffsetDateTime -> ISO-8601
   paidAt?: string;
   createdAt: string;

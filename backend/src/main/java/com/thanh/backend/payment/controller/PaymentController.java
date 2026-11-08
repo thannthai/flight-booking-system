@@ -47,6 +47,11 @@ public class PaymentController {
         return ApiResponse.success("Payment status retrieved successfully", response);
     }
 
+    @PostMapping("/{id}/demo-confirm")
+    public ApiResponse<PaymentResponse> confirmDemo(@AuthenticationPrincipal UserPrincipal principal, @PathVariable Long id) {
+        return ApiResponse.success("Demo payment confirmed; no funds transferred", paymentService.confirmDemoPayment(id, principal.getUser().getId()));
+    }
+
     @PostMapping("/{id}/cancel")
     @Operation(summary = "Cancel an active pending payment")
     public ApiResponse<PaymentResponse> cancelPayment(

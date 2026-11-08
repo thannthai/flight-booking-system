@@ -6,6 +6,8 @@ import com.thanh.backend.booking.dto.response.PassengerResponse;
 import com.thanh.backend.booking.dto.response.TicketResponse;
 import com.thanh.backend.booking.entity.AddOnService;
 import com.thanh.backend.booking.entity.Booking;
+import com.thanh.backend.booking.enums.BookingStatus;
+import com.thanh.backend.booking.enums.BookingCancellationReason;
 import com.thanh.backend.booking.entity.Passenger;
 import com.thanh.backend.booking.entity.Ticket;
 import com.thanh.backend.flight.dto.response.FlightSeatResponse;
@@ -109,10 +111,21 @@ public class BookingMapper {
                 .discountAmount(booking.getDiscountAmount())
                 .totalAmount(booking.getTotalAmount())
                 .status(booking.getStatus())
+                .cancellationReason(cancellationReason(booking))
                 .paymentDeadline(booking.getPaymentDeadline())
                 .createdAt(booking.getCreatedAt())
                 .passengers(passengers != null ? new ArrayList<>(passengers) : null)
                 .tickets(tickets != null ? new ArrayList<>(tickets) : null)
                 .build();
     }
+    private BookingCancellationReason cancellationReason(Booking booking) {
+        if (booking.getStatus() != BookingStatus.CANCELLED) return null;
+        // An authenticated actor takes precedence over free-text cancellation input.
+        if (booking.getCancelledBy() != null) return BookingCancellationReason.USER_CANCELLED;
+        if ("Payment timeout (deadline exceeded)".equals(booking.getCancelReason())) {
+            return BookingCancellationReason.PAYMENT_TIMEOUT;
+        }
+        return BookingCancellationReason.OTHER;
+    }
+
 }

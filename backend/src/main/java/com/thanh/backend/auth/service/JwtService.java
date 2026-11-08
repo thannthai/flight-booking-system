@@ -106,16 +106,16 @@ public class JwtService {
     }
 
     /**
-     * Validate Refresh Token khi client gọi /refresh:
+     * Validate và consume Refresh Token khi client gọi /refresh:
      * 1. Parse JWT — verify signature + chưa hết hạn
      * 2. Kiểm tra type phải là REFRESH
-     * 3. Kiểm tra key "refresh:{userId}:{hash}" có trong Redis không
+     * 3. Atomic DELETE key "refresh:{userId}:{hash}"; chỉ một request được dùng token
      * <p>
      * Tại sao nhận userId từ ngoài thay vì đọc từ JWT claims?
      * → JWT chỉ có email (sub), không có userId để tránh stale data.
      * → AuthService sẽ decode email từ JWT → query DB lấy User → truyền userId vào đây.
      */
-    public void validateRefreshToken(Long userId, String refreshToken) {
+    public void consumeRefreshToken(Long userId, String refreshToken) {
         Claims claims;
         try {
             claims = jwtProvider.parseToken(refreshToken);
@@ -130,11 +130,11 @@ public class JwtService {
             throw new AppException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 
-        // Kiểm tra trong Redis — nếu không tồn tại key:
+        // Atomic consume — DELETE trả false nếu token đã được dùng hoặc revoke:
         //   - Token đã bị revoke (user logout rồi), hoặc
-        //   - Token giả mạo (không do server cấp)
+        //   - Token không có bản ghi hợp lệ trong Redis
         String key = buildRefreshKey(userId, refreshToken);
-        if (!redisTemplate.hasKey(key)) {
+        if (!Boolean.TRUE.equals(redisTemplate.delete(key))) {
             throw new AppException(ErrorCode.REFRESH_TOKEN_INVALID);
         }
 

@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-PostgreSQL stores accounts, flight inventory, reservations, tickets, payments and notification records. The backend shares one relational database, allowing related booking/payment changes to use local transactions. Flyway V1–V10 define the physical schema; JPA/Hibernate maps and validates application entities.
+PostgreSQL stores accounts, flight inventory, reservations, tickets, payments and notification records. The backend shares one relational database, allowing related booking/payment changes to use local transactions. Flyway V1–V12 define the physical schema; JPA/Hibernate maps and validates application entities.
 
 Redis separately manages temporary seat leases and authentication state. PostgreSQL remains authoritative for persisted business outcomes.
 
@@ -36,6 +36,8 @@ Flyway's `flyway_schema_history` is metadata outside this application-table coun
 ### 2.2 Main relationships
 
 A booking contains ordered legs, each referencing a flight. A ticket links a passenger to a booking leg and, for seated passengers, a flight seat. Infants have tickets without seats. Cancelled tickets may retain historical seat references while the seat is later allocated to another reservation.
+
+`users.demo_alias` is a nullable, unique marker identifying demo accounts.
 
 Passengers may belong to a personal directory and reference a guardian. Removing a ticket-linked passenger from the directory detaches ownership while preserving ticket references. A booking may have multiple historical payment records.
 
@@ -126,6 +128,10 @@ erDiagram
 ### 3.3 Payment and notifications
 
 Payments and notifications each belong to a booking. The repeated booking box supplies context; it does not represent another table.
+
+Payments support the `DEMO` provider alongside existing provider values.
+
+Transfer fields are nullable for compatibility with historical rows: `bank_bin`, `account_number`, `account_name`, `transfer_description`, and `transfer_amount`.
 
 ```mermaid
 erDiagram

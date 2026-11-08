@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { demoPassengerDraft } from '@/lib/demo-passengers'
 import { useAuth } from '@/lib/auth-context'
 import { api } from '@/lib/api'
 import { departureDate, passengerTypeAtDate, validatePassengerDraft } from '@/lib/passenger-validation'
@@ -30,11 +31,13 @@ export function usePassengerForm({ flight, returnFlight, searchParams, passenger
   })
 
   // Autofill when user logs in during the flow
-  useEffect(() => {
+  const [previousUser, setPreviousUser] = useState(user)
+  if (previousUser !== user) {
+    setPreviousUser(user)
     if (user) setContactInfo(prev => !prev.name || !prev.email ? {
       name: prev.name || user.fullName || '', email: prev.email || user.email || '', phone: prev.phone || user.phone || '',
     } : prev)
-  }, [user])
+  }
 
   // Create passenger forms based on searchParams
   const totalAdults = searchParams.passengers.adults
@@ -67,6 +70,12 @@ export function usePassengerForm({ flight, returnFlight, searchParams, passenger
   const [copyToPax1, setCopyToPax1] = useState(false)
   // Passenger directory state
   const [savedPassengers, setSavedPassengers] = useState<PassengerResponse[]>([])
+  const directoryOwner = isAuthenticated ? user?.id : null
+  const [previousOwner, setPreviousOwner] = useState(directoryOwner)
+  if (previousOwner !== directoryOwner) {
+    setPreviousOwner(directoryOwner)
+    setSavedPassengers([])
+  }
   const [saveToDirectory, setSaveToDirectory] = useState<boolean[]>(new Array(paxList.length).fill(false))
 
   const mounted = useRef(false)
@@ -84,7 +93,7 @@ export function usePassengerForm({ flight, returnFlight, searchParams, passenger
     let active = true
     if (isAuthenticated) {
       api.getMyPassengers().then(data => { if (active) setSavedPassengers(data || []) }).catch(() => {})
-    } else setSavedPassengers([])
+    }
     return () => { active = false }
   }, [isAuthenticated, user?.id])
 
@@ -293,7 +302,23 @@ export function usePassengerForm({ flight, returnFlight, searchParams, passenger
   const totalTaxes = estimate.taxAmount
   const finalTotal = estimate.totalAmount
 
+  const sample = useRef<PassengerDraft | null>(passengerData?.passengers.every(p => p.id.startsWith('DEMO')) ? passengerData : null)
+  const fillDemoDetails = () => {
+    if (!user?.demoAlias) return
+    sample.current ||= demoPassengerDraft(paxList, departureDate(flight.departureTime))
+    const fill = <T extends object>(current: T, defaults: T): T => Object.fromEntries(
+      Object.entries(defaults).map(([key, value]) => [key, current[key as keyof T] === '' || current[key as keyof T] == null ? value : current[key as keyof T]])
+    ) as T
+    setContactInfo(fill(contactInfo, sample.current.contactInfo))
+    setPassengers(passengers.map((p, index) => fill(p, sample.current!.passengers[index])))
+    setCopyToPax1(false)
+    setSaveToDirectory(paxList.map(() => false))
+    setErrors({})
+    setShowErrorBanner(false)
+  }
+
   return {
+    isDemoUser: isAuthenticated && !!user?.demoAlias, fillDemoDetails,
     isAuthenticated, contactInfo, passengers, paxList, errors, showErrorBanner,
     copyToPax1, savedPassengers, uniqueSavedPassengers, saveToDirectory, setSaveToDirectory,
     passengerAddOns, activeAddOnPax, setActiveAddOnPax,

@@ -883,7 +883,10 @@ public class BookingService {
             return bookingMapper.toTicketResponse(ticket, addOns);
         }).toList();
 
-        return bookingMapper.toResponse(booking, passengerResponses, ticketResponses);
+        BookingResponse response = bookingMapper.toResponse(booking, passengerResponses, ticketResponses);
+        paymentRepository.findTopByBookingIdOrderByCreatedAtDesc(booking.getId())
+                .ifPresent(payment -> response.setPaymentProvider(payment.getProvider()));
+        return response;
     }
 
     /**
@@ -931,7 +934,7 @@ public class BookingService {
                             @Override
                             public void afterCommit() {
                                 try {
-                                    payOSGatewayService.cancelPaymentLinkAsync(locked.getOrderCode(), "Booking cancelled");
+                                    if ("PAYOS".equals(locked.getProvider())) payOSGatewayService.cancelPaymentLinkAsync(locked.getOrderCode(), "Booking cancelled");
                                 } catch (RuntimeException error) {
                                     log.warn("Provider cancellation deferred, paymentId={}", locked.getId());
                                 }

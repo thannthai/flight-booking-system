@@ -1,6 +1,7 @@
 package com.thanh.backend.booking.dto.response;
 
 import com.thanh.backend.booking.enums.BookingStatus;
+import com.thanh.backend.booking.enums.BookingCancellationReason;
 import com.thanh.backend.booking.enums.TripType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -20,6 +21,7 @@ import java.util.List;
 public class BookingResponse {
     private Long id;
     private String pnr;
+    private String paymentProvider;
     private String contactName;
     private String contactEmail;
     private String contactPhone;
@@ -29,6 +31,7 @@ public class BookingResponse {
     private BigDecimal discountAmount;
     private BigDecimal totalAmount;
     private BookingStatus status;
+    private BookingCancellationReason cancellationReason;
     private OffsetDateTime paymentDeadline;
     private OffsetDateTime createdAt;
     private List<PassengerResponse> passengers;

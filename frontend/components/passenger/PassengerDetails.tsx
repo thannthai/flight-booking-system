@@ -1,14 +1,16 @@
 'use client'
 
+import Image from 'next/image'
+
+import { SkywayBrand } from '@/components/SkywayBrand'
+
 import { useState } from 'react'
 import { 
   Check, 
-  Plane, 
   ArrowRight, 
   ArrowLeft, 
   AlertCircle,
   Users,
-  Sparkles,
   Plus
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -40,6 +42,7 @@ function PassengerDetailsForm({
 }: PassengerFormOptions & { onBack: () => void; onHome: () => void }) {
   const form = usePassengerForm({ flight, returnFlight, searchParams, passengerData, onDraftChange, onContinue })
   const {
+    isDemoUser, fillDemoDetails,
     isAuthenticated, contactInfo, passengers, paxList, errors, showErrorBanner,
     copyToPax1, savedPassengers, uniqueSavedPassengers, saveToDirectory, setSaveToDirectory,
     passengerAddOns, activeAddOnPax, setActiveAddOnPax,
@@ -59,12 +62,7 @@ function PassengerDetailsForm({
         <div className="border-b border-slate-200">
           <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-5 lg:px-8">
             <button onClick={onHome} className="flex items-center gap-3 cursor-pointer" aria-label="Skyway home">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-[#102a56] text-white">
-                <Plane className="size-5 -rotate-12" />
-              </span>
-              <span className="text-xl font-bold tracking-tight">
-                skyway<span className="text-[#f59e0b]">.</span>
-              </span>
+              <SkywayBrand />
             </button>
             <div className="flex items-center gap-3">
               <UserNav />
@@ -107,7 +105,7 @@ function PassengerDetailsForm({
             <div className="flex flex-col gap-3">
               {/* Outbound */}
               <div className="flex items-center gap-4">
-                <img src={`/airlines/${flight.logo}.svg`} alt={flight.airline} className="h-9 w-14 object-contain bg-white rounded-lg p-1" />
+                <Image unoptimized width={56} height={36} src={`/airlines/${flight.logo}.svg`} alt={flight.airline} className="h-9 w-14 object-contain bg-white rounded-lg p-1" />
                 <div>
                   <p className="text-base font-bold text-white">
                     {returnFlight && <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/30 text-blue-200 mr-2 uppercase font-black tracking-wider">Outbound</span>}
@@ -128,7 +126,7 @@ function PassengerDetailsForm({
               {/* Return (if present) */}
               {returnFlight && (
                 <div className="flex items-center gap-4 pt-2 border-t border-white/10">
-                  <img src={`/airlines/${returnFlight.logo}.svg`} alt={returnFlight.airline} className="h-9 w-14 object-contain bg-white rounded-lg p-1" />
+                  <Image unoptimized width={56} height={36} src={`/airlines/${returnFlight.logo}.svg`} alt={returnFlight.airline} className="h-9 w-14 object-contain bg-white rounded-lg p-1" />
                   <div>
                     <p className="text-base font-bold text-white">
                       <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/30 text-amber-200 mr-2 uppercase font-black tracking-wider">Return</span>
@@ -155,14 +153,18 @@ function PassengerDetailsForm({
         
         <div className="flex flex-col gap-6">
           
+          {isDemoUser && <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+            <div><p className="font-semibold text-[#102a56]">Demo passenger details</p><p className="text-sm text-slate-600">Fill fictional details in one click, review and continue. No real personal data needed.</p></div>
+            <Button type="button" onClick={fillDemoDetails}>Fill sample details</Button>
+          </div>}
           <ContactFields contactInfo={contactInfo} errors={errors} copyToPax1={copyToPax1} handleContactChange={handleContactChange} handleCopyToggle={handleCopyToggle} />
 
           {/* Quick suggestions from saved passenger directory */}
           {isAuthenticated && uniqueSavedPassengers.length > 0 && (
-            <div className="rounded-2xl border border-blue-100 bg-gradient-to-r from-blue-50/70 to-indigo-50/40 p-4 mb-6 shadow-2xs">
+            <div className="rounded-2xl border border-blue-100 bg-blue-50 p-4 mb-6 shadow-2xs">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="size-4 text-amber-500 shrink-0" />
+                  <Users className="size-4 text-amber-500 shrink-0" />
                   <span className="text-xs font-bold text-[#102a56]">Quick suggestions from your directory:</span>
                 </div>
                 <button

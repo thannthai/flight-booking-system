@@ -1,5 +1,6 @@
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
+import 'maplibre-gl/dist/maplibre-gl.css'
 import './globals.css'
 import { AuthProvider } from '@/lib/auth-context'
 import { AuthModal } from '@/components/auth/AuthModal'
@@ -7,7 +8,6 @@ import { AuthModal } from '@/components/auth/AuthModal'
 export const metadata: Metadata = {
   title: 'skyway. — Simple flight booking',
   description: 'Find and book your next flight with skyway.',
-  generator: 'v0.app',
   icons: {
     icon: [
       {

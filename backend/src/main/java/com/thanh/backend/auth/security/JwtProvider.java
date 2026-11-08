@@ -82,7 +82,7 @@ public class JwtProvider {
      */
     private SecretKey getSigningKey() {
         // Dịch ngược cái chuỗi văn bản secretKey trở lại dạng mảng Byte
-        byte[] keyBytes = Decoders.BASE64.decode(secretKey);
+        byte[] keyBytes = Decoders.BASE64.decode(secretKey.replaceAll("\\s", ""));
 
         // Nhào nặn mảng Byte đó thành đối tượng Key chuẩn của HMAC-SHA
         return Keys.hmacShaKeyFor(keyBytes);

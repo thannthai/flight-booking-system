@@ -163,3 +163,4 @@ Integration tests use isolated services; browser smoke uses mocked APIs. Neither
 - [Project Specification](docs/01-project-specification.md) — features, scope and key business rules.
 - [System Architecture](docs/02-system-architecture.md) — module boundaries, integrations and design decisions.
 - [Database Design](docs/03-database-design.md) — tables, relationships and integrity protections.
+- [Portfolio Demo](docs/04-demo-experience.md) — isolated demo configuration, public accounts and simulated checkout.

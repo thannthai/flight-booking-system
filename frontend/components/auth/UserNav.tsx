@@ -1,12 +1,15 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { DemoGuide } from '@/components/DemoGuide'
 import { useAuth } from '@/lib/auth-context'
 import { LogOut, ChevronDown, ShieldCheck, Mail, Phone, Users, Ticket } from 'lucide-react'
 import { PassengerDirectoryModal } from '@/components/passenger/PassengerDirectoryModal'
 import { MyBookingsModal } from '@/components/booking/MyBookingsModal'
 
 export function UserNav() {
+  const router = useRouter()
   const { user, isAuthenticated, openAuthModal, logout, authError } = useAuth()
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [passengerModalOpen, setPassengerModalOpen] = useState(false)
@@ -33,6 +36,7 @@ export function UserNav() {
   if (!isAuthenticated || !user) {
     return (
       <div className="flex flex-wrap items-center gap-2">
+        <DemoGuide />
         {authError && <p role="alert" className="text-xs text-red-700">{authError}</p>}
         <button
           type="button"
@@ -53,7 +57,7 @@ export function UserNav() {
   }
 
   // User is logged in
-  const initials = user.fullName
+  const initials = user.demoAlias ? 'D' : user.fullName
     ? user.fullName
         .split(' ')
         .map((n) => n[0])
@@ -76,7 +80,7 @@ export function UserNav() {
           </div>
           <div className="text-left hidden sm:block">
             <p className="text-xs font-bold text-slate-800 leading-tight truncate max-w-[130px]">
-              {user.fullName || user.email}
+              {user.demoAlias ? 'Demo Traveler' : user.fullName || user.email}
             </p>
           </div>
           <ChevronDown className="size-3.5 text-slate-400" />
@@ -85,7 +89,7 @@ export function UserNav() {
         {dropdownOpen && (
           <div className="absolute right-0 mt-2 w-64 rounded-2xl bg-white p-2 shadow-xl border border-slate-100 z-50 animate-in fade-in zoom-in-95 duration-150">
             <div className="px-3 py-2.5 border-b border-slate-100">
-              <p className="text-xs font-bold text-slate-900 truncate">{user.fullName}</p>
+              <p className="text-xs font-bold text-slate-900 truncate">{user.demoAlias ? 'Demo Traveler' : user.fullName}</p>
               <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500 truncate">
                 <Mail className="size-3 shrink-0 text-slate-400" />
                 <span className="truncate">{user.email}</span>
@@ -152,7 +156,7 @@ export function UserNav() {
       <MyBookingsModal 
         isOpen={myBookingsOpen} 
         onClose={() => setMyBookingsOpen(false)} 
-        onPayBooking={booking => window.location.assign(`/payment/status?bookingId=${booking.id}`)}
+        onPayBooking={booking => router.push(`/payment/status?bookingId=${booking.id}`)}
       />
     </>
   )

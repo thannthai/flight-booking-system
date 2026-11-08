@@ -12,6 +12,7 @@ interface AuthContextType {
   authError: string | null
   isAuthModalOpen: boolean
   authModalMode: 'login' | 'register'
+  loginDemo: (alias: 'A' | 'B') => Promise<AuthResponse>
   login: (request: LoginRequest) => Promise<AuthResponse>
   register: (request: RegisterRequest) => Promise<AuthResponse>
   logout: () => Promise<void>
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally { setLoading(false) }
   }
   return <AuthContext.Provider value={{ user, token, isAuthenticated: !!user && !!token && !isTokenExpired(token), isLoading, authError, isAuthModalOpen, authModalMode,
+    loginDemo: alias => finishAuth(api.loginDemo(alias)),
     login: request => finishAuth(api.login(request)), register: request => finishAuth(api.register(request)),
     logout: async () => { pending.current = null; setOpen(false); try { await api.logout() } catch (error) { setAuthError('Signed out locally. Server sign-out could not be confirmed; reconnect before signing in again.'); throw error } }, openAuthModal, closeAuthModal }}>{children}</AuthContext.Provider>
 }

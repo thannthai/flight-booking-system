@@ -62,3 +62,11 @@ pnpm test:e2e
 - Backend environment keys come from `application.yaml`; do not assume `.env` is loaded automatically. Frontend template: `frontend/environment.example` → ignored `.env.local`. Browser calls `/api/v1`; server-only `BACKEND_API_URL` ends in `/api/v1` and requires HTTPS in production. Check cookie/CORS/callback configuration before deployment; repository config does not prove hosting settings.
 - Never commit/log credentials, tokens, private keys, real payment details or sensitive passenger data. Keep `.env*`, `backend/target/`, `node_modules/`, `.next/`, `next-env.d.ts`, `*.tsbuildinfo` and browser artifacts ignored. Generate Next types rather than editing generated declarations.
 - For multi-session work, leave a concise local handoff with verified milestones, open issues and commands; keep transient progress/test counts out of this guide. Ask before destructive operations or production-data changes; commit/push/deploy only when requested.
+
+## UI rules (frontend/)
+- Sau mỗi thay đổi UI: chạy dev server, chụp screenshot bằng Playwright ở 375/768/1280px, tự kiểm tra rồi mới báo xong.
+- Tối đa 2 font, 1 accent color. Không gradient tím/xanh, không emoji làm icon, không card lồng card.
+- Spacing theo scale 4/8px. Không dùng shadcn/Tailwind mặc định mà không chỉnh token.
+- Phải có đủ trạng thái loading / empty / error cho mọi màn hình có data.
+- Không đổi logic, props, API call khi chỉnh UI. Không thêm dependency mà không báo.
+- Trước khi kết thúc, liệt kê những gì đã sửa và những gì còn lại.

@@ -28,6 +28,12 @@ public class PaymentResponse {
     private RefundStatus refundStatus;
     private String paymentUrl;
     private String qrCode;
+    private String bankBin;
+    private String accountNumber;
+    private String accountName;
+    private String transferDescription;
+    private BigDecimal transferAmount;
+
     private OffsetDateTime expiredAt;
     private OffsetDateTime paidAt;
     private OffsetDateTime createdAt;

@@ -97,6 +97,7 @@ class PaymentServiceImplTest {
                 flightSeatRepository,
                 payOSGatewayService,
                 payOSProperties,
+                new com.thanh.backend.payment.config.DemoPaymentConfiguration(new org.springframework.mock.env.MockEnvironment()),
                 paymentMapper,
                 eventPublisher,
                 transactionTemplate
@@ -137,7 +138,7 @@ class PaymentServiceImplTest {
         when(paymentRepository.findByBookingIdAndStatus(1L, PaymentStatus.PENDING)).thenReturn(Optional.empty());
         when(paymentRepository.getNextOrderCode()).thenReturn(1000000001L);
 
-        Payment initialPayment = Payment.builder()
+        Payment initialPayment = Payment.builder().provider("PAYOS")
                 .booking(testBooking)
                 .orderCode(1000000001L)
                 .amount(testBooking.getTotalAmount())
@@ -180,12 +181,17 @@ class PaymentServiceImplTest {
         assertNotNull(actualResponse);
         assertEquals("https://pay.payos.vn/web/123", actualResponse.getPaymentUrl());
         verify(payOSGatewayService).createPaymentLink(any(CreatePaymentLinkRequest.class));
+        assertEquals("970415", initialPayment.getBankBin());
+        assertEquals("123456789", initialPayment.getAccountNumber());
+        assertEquals("CONG TY DU LICH", initialPayment.getAccountName());
+        assertEquals("Thanh toan ve ABC123", initialPayment.getTransferDescription());
+        assertEquals(new BigDecimal("1500000"), initialPayment.getTransferAmount());
     }
 
     @Test
     @DisplayName("Create Payment Link - Idempotency Reuses existing URL")
     void createPaymentLink_ReuseExistingUrl() {
-        Payment existingPayment = Payment.builder()
+        Payment existingPayment = Payment.builder().provider("PAYOS")
                 .booking(testBooking)
                 .orderCode(1000000001L)
                 .status(PaymentStatus.PENDING)
@@ -207,6 +213,17 @@ class PaymentServiceImplTest {
 
         assertEquals("https://pay.payos.vn/web/existing", actualResponse.getPaymentUrl());
         verify(payOSGatewayService, never()).createPaymentLink(any());
+    }
+
+    @Test
+    void createPaymentLink_reusesLegacyQrWithoutMetadataOrCheckoutUrl() {
+        Payment existing = Payment.builder().provider("PAYOS").booking(testBooking)
+                .status(PaymentStatus.PENDING).qrCode("existing-qr").build();
+        when(bookingRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(testBooking));
+        when(paymentRepository.findByBookingIdAndStatus(1L, PaymentStatus.PENDING)).thenReturn(Optional.of(existing));
+        when(paymentMapper.toResponse(existing)).thenReturn(PaymentResponse.builder().qrCode("existing-qr").build());
+        assertEquals("existing-qr", paymentService.createPaymentLink(1L, 100L).getQrCode());
+        org.mockito.Mockito.verifyNoInteractions(payOSGatewayService);
     }
 
     @Test
@@ -274,7 +291,7 @@ class PaymentServiceImplTest {
                 .data(data)
                 .build();
 
-        Payment payment = Payment.builder()
+        Payment payment = Payment.builder().provider("PAYOS")
                 .booking(testBooking)
                 .orderCode(1000000001L)
                 .status(PaymentStatus.PENDING)
@@ -330,7 +347,7 @@ class PaymentServiceImplTest {
                 .data(data)
                 .build();
 
-        Payment payment = Payment.builder()
+        Payment payment = Payment.builder().provider("PAYOS")
                 .booking(testBooking)
                 .orderCode(1000000001L)
                 .status(PaymentStatus.PENDING)
@@ -355,7 +372,7 @@ class PaymentServiceImplTest {
     @Test
     @DisplayName("User Cancel - Cancels Payment, Booking, and releases FlightSeats")
     void cancelPayment_Success() {
-        Payment payment = Payment.builder()
+        Payment payment = Payment.builder().provider("PAYOS")
                 .booking(testBooking)
                 .orderCode(1000000001L)
                 .status(PaymentStatus.PENDING)

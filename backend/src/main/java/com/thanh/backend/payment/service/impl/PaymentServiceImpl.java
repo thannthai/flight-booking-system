@@ -56,6 +56,7 @@ public class PaymentServiceImpl implements PaymentService {
     private final FlightSeatRepository flightSeatRepository;
     private final PayOSGatewayService payOSGatewayService;
     private final PayOSProperties payOSProperties;
+    private final com.thanh.backend.payment.config.DemoPaymentConfiguration demo;
     private final PaymentMapper paymentMapper;
     private final ApplicationEventPublisher eventPublisher;
     private final TransactionTemplate transactionTemplate;
@@ -74,11 +75,13 @@ public class PaymentServiceImpl implements PaymentService {
 
     private record CreatePaymentResult(
             String checkoutUrl,
-            String qrCode
+            String qrCode, String bankBin, String accountNumber, String accountName,
+            String transferDescription, BigDecimal transferAmount
     ) {}
 
     @Override
     public PaymentResponse createPaymentLink(Long bookingId, Long currentUserId) {
+        if (demo.isDemo()) demo.assertDemo();
         // =========================================================================
         // Phase 1: Chuẩn bị Payment Intent trong DB transaction ngắn (~5ms)
         // =========================================================================
@@ -102,11 +105,14 @@ public class PaymentServiceImpl implements PaymentService {
                 throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
             }
 
+            if (demo.isDemoAccount(booking.getUser()) && !demo.usesDemoPayment(booking.getUser())) throw new AppException(ErrorCode.FORBIDDEN);
+            String provider = demo.usesDemoPayment(booking.getUser()) ? "DEMO" : "PAYOS";
             // 4. Kiểm tra xem đã có Payment PENDING nào chưa (nhờ Partial Unique Index)
             Optional<Payment> activePaymentOpt = paymentRepository.findByBookingIdAndStatus(bookingId, PaymentStatus.PENDING);
             if (activePaymentOpt.isPresent()) {
                 Payment activePayment = activePaymentOpt.get();
-                if (activePayment.getPaymentUrl() != null) {
+                if (!provider.equals(activePayment.getProvider())) throw new AppException(ErrorCode.PAYMENT_MODE_MISMATCH);
+                if ("DEMO".equals(activePayment.getProvider()) || (activePayment.getPaymentUrl() != null || activePayment.getQrCode() != null)) {
                     // Đã có link và còn hạn -> Tái sử dụng (Idempotency)
                     return new Phase1Result(activePayment, booking, false, true);
                 }
@@ -123,7 +129,7 @@ public class PaymentServiceImpl implements PaymentService {
                     .orderCode(orderCode)
                     .amount(booking.getTotalAmount())
                     .currency("VND")
-                    .provider("PAYOS")
+                    .provider(provider)
                     .status(PaymentStatus.PENDING)
                     .refundStatus(RefundStatus.NONE)
                     .expiredAt(booking.getPaymentDeadline())
@@ -139,7 +145,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         // Nếu đã có URL tái sử dụng được, trả về luôn
-        if (phase1.isReuse()) {
+        if (phase1.isReuse() || "DEMO".equals(phase1.payment().getProvider())) {
             return paymentMapper.toResponse(phase1.payment());
         }
 
@@ -162,6 +168,11 @@ public class PaymentServiceImpl implements PaymentService {
             if (payment.getStatus() == PaymentStatus.PENDING) {
                 payment.setPaymentUrl(result.checkoutUrl());
                 payment.setQrCode(result.qrCode());
+                payment.setBankBin(result.bankBin());
+                payment.setAccountNumber(result.accountNumber());
+                payment.setAccountName(result.accountName());
+                payment.setTransferDescription(result.transferDescription());
+                payment.setTransferAmount(result.transferAmount());
                 paymentRepository.save(payment);
             } else if (payment.getStatus() == PaymentStatus.SUCCESS) {
                 // Webhook đã xử lý xong trước khi Phase 3 commit -> Giữ nguyên, không ghi đè URL
@@ -201,7 +212,9 @@ public class PaymentServiceImpl implements PaymentService {
                 .build();
 
         CreatePaymentLinkResponse response = payOSGatewayService.createPaymentLink(request);
-        return new CreatePaymentResult(response.getCheckoutUrl(), response.getQrCode());
+        return new CreatePaymentResult(response.getCheckoutUrl(), response.getQrCode(), response.getBin(),
+                response.getAccountNumber(), response.getAccountName(), response.getDescription(),
+                response.getAmount() == null ? null : BigDecimal.valueOf(response.getAmount()));
     }
 
     @Override
@@ -224,6 +237,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         Payment payment = paymentOpt.get();
+
         return PaymentStatusResponse.builder()
                 .bookingId(booking.getId())
                 .bookingStatus(booking.getStatus())
@@ -291,7 +305,8 @@ public class PaymentServiceImpl implements PaymentService {
             return lockedPayment;
         });
 
-        if (cancelledPayment != null && cancelledPayment.getStatus() == PaymentStatus.CANCELLED) {
+        if (cancelledPayment != null && cancelledPayment.getStatus() == PaymentStatus.CANCELLED
+                && "PAYOS".equals(cancelledPayment.getProvider())) {
             // Sau khi commit DB, gửi request hủy link sang payOS bất đồng bộ
             try {
                 payOSGatewayService.cancelPaymentLinkAsync(cancelledPayment.getOrderCode(), "User cancelled payment");
@@ -322,6 +337,7 @@ public class PaymentServiceImpl implements PaymentService {
         }
 
         Payment payment = paymentOpt.get();
+        if (!"PAYOS".equals(payment.getProvider())) throw new AppException(ErrorCode.PAYMENT_STATUS_INVALID);
 
         // 4. Xử lý cập nhật trạng thái trong DB Transaction ngắn
         // Dùng array 1 phần tử để capture event từ lambda (effectively-final workaround)
@@ -356,28 +372,8 @@ public class PaymentServiceImpl implements PaymentService {
 
             if (booking.getStatus() == BookingStatus.PENDING
                     && lockedPayment.getStatus() == PaymentStatus.PENDING && isOnTime && isAmountValid) {
-                // Thanh toán thành công đúng hạn
-                lockedPayment.setStatus(PaymentStatus.SUCCESS);
-                lockedPayment.setProviderTxnId(data.getReference());
-                lockedPayment.setPaidAt(transTime);
-                lockedPayment.setCallbackData(webhook.getData() != null ? webhook.getData().toString() : null);
-                paymentRepository.save(lockedPayment);
-
-                booking.setStatus(BookingStatus.COMPLETED);
-                bookingRepository.save(booking);
-
-                // Xuất vé
-                List<Ticket> tickets = ticketRepository.findByBookingId(booking.getId());
-                for (Ticket ticket : tickets) {
-                    ticket.setStatus(TicketStatus.ISSUED);
-                    ticket.setIssuedAt(transTime);
-                    ticketRepository.save(ticket);
-                }
-
-                // Chuẩn bị event để publish SAU KHI commit (tránh gửi email trước khi DB commit thành công)
-                successEventHolder[0] = new PaymentSuccessEvent(this, lockedPayment.getId(), booking.getId());
-                log.info("Payment SUCCESS for orderCode: {}, bookingId: {}, PNR: {}",
-                        data.getOrderCode(), booking.getId(), booking.getPnr());
+                successEventHolder[0] = completePayment(lockedPayment, booking, transTime,
+                        data.getReference(), webhook.getData() != null ? webhook.getData().toString() : null);
             } else {
                 // Thanh toán trễ (transTime > paymentDeadline HOẶC đơn đã CANCELLED / EXPIRED)
                 log.warn("Late payment received for orderCode: {}, bookingId: {}, transTime: {}, deadline: {}, status: {}",
@@ -399,6 +395,49 @@ public class PaymentServiceImpl implements PaymentService {
         if (successEventHolder[0] != null) {
             eventPublisher.publishEvent(successEventHolder[0]);
         }
+    }
+
+    @Override
+    public PaymentResponse confirmDemoPayment(Long paymentId, Long currentUserId) {
+        if (!demo.isDemo()) throw new AppException(ErrorCode.FORBIDDEN);
+        demo.assertDemo();
+        PaymentSuccessEvent[] event = new PaymentSuccessEvent[1];
+        PaymentResponse response = transactionTemplate.execute(tx -> {
+            Payment found = paymentRepository.findById(paymentId).orElseThrow(() -> new AppException(ErrorCode.PAYMENT_NOT_FOUND));
+            Booking booking = bookingRepository.findByIdForUpdate(found.getBooking().getId()).orElseThrow();
+            Payment payment = paymentRepository.findByIdForUpdate(paymentId).orElseThrow();
+            entityManager.refresh(booking, LockModeType.PESSIMISTIC_WRITE);
+            entityManager.refresh(payment, LockModeType.PESSIMISTIC_WRITE);
+            if (!booking.getUser().getId().equals(currentUserId)) throw new AppException(ErrorCode.UNAUTHORIZED_BOOKING_ACCESS);
+            if (!demo.usesDemoPayment(booking.getUser())) throw new AppException(ErrorCode.FORBIDDEN);
+            if (!"DEMO".equals(payment.getProvider())) throw new AppException(ErrorCode.PAYMENT_STATUS_INVALID);
+            if (payment.getStatus() == PaymentStatus.SUCCESS) return paymentMapper.toResponse(payment);
+            if (payment.getStatus() != PaymentStatus.PENDING || booking.getStatus() != BookingStatus.PENDING
+                    || payment.getRefundStatus() != RefundStatus.NONE) throw new AppException(ErrorCode.PAYMENT_STATUS_INVALID);
+            OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+            if (now.isAfter(booking.getPaymentDeadline())) throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
+            event[0] = completePayment(payment, booking, now, "DEMO-" + payment.getOrderCode(), "Simulated payment; no funds transferred");
+            return paymentMapper.toResponse(payment);
+        });
+        if (event[0] != null) eventPublisher.publishEvent(event[0]);
+        return response;
+    }
+
+    // Called only inside the locked transaction; callers publish the event after commit.
+    private PaymentSuccessEvent completePayment(Payment payment, Booking booking, OffsetDateTime paidAt, String reference, String callback) {
+        payment.setStatus(PaymentStatus.SUCCESS);
+        payment.setProviderTxnId(reference);
+        payment.setPaidAt(paidAt);
+        payment.setCallbackData(callback);
+        paymentRepository.save(payment);
+        booking.setStatus(BookingStatus.COMPLETED);
+        bookingRepository.save(booking);
+        for (Ticket ticket : ticketRepository.findByBookingId(booking.getId())) {
+            ticket.setStatus(TicketStatus.ISSUED);
+            ticket.setIssuedAt(paidAt);
+            ticketRepository.save(ticket);
+        }
+        return new PaymentSuccessEvent(this, payment.getId(), booking.getId());
     }
 
     // payOS accepts integer VND. Preserve the existing outbound HALF_UP contract

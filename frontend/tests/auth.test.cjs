@@ -79,3 +79,62 @@ test('account switch while decoding a response rejects prior data and clears bot
  assert.equal(sessionStorage.getItem('skyway_session'),null)
  assert.equal(sessionStorage.getItem('skyway_booking_attempt'),null)
 })
+test('demo login preserves credential failures without refresh or global sign-in modal',async()=>{
+ let calls=0,events=0;window.dispatchEvent=()=>events++
+ global.fetch=async()=>{calls++;return {ok:false,status:401,json:async()=>({message:'Invalid credentials',errorCode:'INVALID_CREDENTIALS'})}}
+ await assert.rejects(client.api.loginDemo('A'),e=>e.errorCode==='INVALID_CREDENTIALS')
+ assert.equal(calls,1);assert.equal(events,0)
+})
+
+function installLocks(t) {
+ const descriptor=Object.getOwnPropertyDescriptor(globalThis,'navigator')
+ let tail=Promise.resolve()
+ const locks={request:(_name,operation)=>{const result=tail.then(operation);tail=result.catch(()=>{});return result}}
+ Object.defineProperty(globalThis,'navigator',{value:{locks},configurable:true})
+ t.after(()=>{if(descriptor)Object.defineProperty(globalThis,'navigator',descriptor);else delete globalThis.navigator})
+ return locks
+}
+
+test('independent tabs serialize rotations and send the newly installed cookie',async t=>{
+ installLocks(t)
+ const {createAuthSession}=require('../lib/auth-session.ts')
+ const a=createAuthSession(()=>{}),b=createAuthSession(()=>{})
+ let cookie=0,active=0,maxActive=0,calls=0
+ global.fetch=async()=>{
+  const sent=cookie;active++;maxActive=Math.max(maxActive,active);calls++
+  await new Promise(resolve=>setImmediate(resolve))
+  assert.equal(sent,cookie,'a stale cookie must never race a rotation')
+  cookie++;active--;return response()
+ }
+ const results=await Promise.all([a.refreshAccessToken(),b.refreshAccessToken()])
+ assert.ok(results.every(Boolean));assert.equal(calls,2);assert.equal(maxActive,1)
+ assert.equal(a.getCurrentUser().id,1);assert.equal(b.getCurrentUser().id,1)
+ assert.equal(localStorage.getItem('access_token'),null)
+})
+
+test('logout fences a refresh waiting for another tab cookie lock',async t=>{
+ const locks=installLocks(t)
+ let release,entered
+ const started=new Promise(resolve=>entered=resolve)
+ const blocker=locks.request('skyway-auth-cookie',()=>{entered();return new Promise(resolve=>release=resolve)})
+ await started
+ const {createAuthSession}=require('../lib/auth-session.ts')
+ const session=createAuthSession(()=>{})
+ const calls=[];global.fetch=async url=>{calls.push(url);return response()}
+ const refresh=session.refreshAccessToken(),logout=session.logout()
+ release();await blocker;await Promise.all([refresh,logout])
+ assert.deepEqual(calls,['/api/v1/auth/logout']);assert.equal(session.getCurrentUser(),null)
+})
+
+test('sign-in waits for another tab rotation before replacing its cookie',async t=>{
+ installLocks(t)
+ const {createAuthSession}=require('../lib/auth-session.ts')
+ const a=createAuthSession(()=>{}),b=createAuthSession(()=>{})
+ let release,entered;const started=new Promise(resolve=>entered=resolve),calls=[]
+ global.fetch=async url=>{calls.push(url);if(url.endsWith('/refresh')){entered();return new Promise(resolve=>release=resolve)}return response(2)}
+ const refresh=a.refreshAccessToken();await started
+ const login=b.login({email:'2@example.test',password:'test'})
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(calls.length,1)
+ release(response());await Promise.all([refresh,login])
+ assert.equal(b.getCurrentUser().id,2);assert.equal(calls.length,2)
+})

@@ -7,7 +7,7 @@ export interface PaymentClient {
   get<T>(path: string): Promise<T>
   post<T>(path: string, body?: unknown): Promise<T>
 }
-export type PaymentView = 'ready' | 'pending' | 'success' | 'cancelled' | 'expired' | 'refund' | 'unavailable'
+export type PaymentView = 'ready' | 'initializing' | 'pending' | 'success' | 'cancelled' | 'expired' | 'refund' | 'unavailable'
 export interface PaymentSnapshot {
   booking: BookingResponse
   status: PaymentStatusResponse
@@ -16,10 +16,16 @@ export interface PaymentSnapshot {
 export function paymentView({ booking, status }: PaymentSnapshot, now = Date.now()): PaymentView {
   if (status.paymentStatus === 'PAID_AFTER_TERMINAL' || (status.payment?.refundStatus && status.payment.refundStatus !== 'NONE')) return 'refund'
   if (booking.status === 'COMPLETED' && status.paymentStatus === 'SUCCESS') return 'success'
+  if (booking.status === 'CANCELLED' && booking.cancellationReason === 'PAYMENT_TIMEOUT') return 'expired'
   if (booking.status === 'CANCELLED' || status.paymentStatus === 'CANCELLED') return 'cancelled'
   if (status.paymentStatus === 'EXPIRED' || Date.parse(booking.paymentDeadline) <= now) return 'expired'
   if (booking.status !== 'PENDING') return 'unavailable'
-  return status.paymentStatus === 'NOT_CREATED' ? 'ready' : status.paymentStatus === 'PENDING' ? 'pending' : 'unavailable'
+  if (status.paymentStatus === 'NOT_CREATED') return 'ready'
+  if (status.paymentStatus === 'PENDING') {
+    if (status.payment?.provider !== 'DEMO' && !status.payment?.qrCode && !checkoutUrl(status.payment?.paymentUrl)) return 'initializing'
+    return 'pending'
+  }
+  return 'unavailable'
 }
 
 export async function readPayment(bookingId: number, client: PaymentClient = api): Promise<PaymentSnapshot> {
@@ -36,7 +42,7 @@ export function preparePayment(bookingId: number, client: PaymentClient = api): 
   const operation = (async () => {
     const snapshot = await readPayment(bookingId, client)
     const view = paymentView(snapshot)
-    if (view === 'ready' || (view === 'pending' && !snapshot.status.payment?.paymentUrl)) {
+    if (view === 'ready' || view === 'initializing') {
       await client.post<PaymentResponse>('/payments/create-link', { bookingId })
       return readPayment(bookingId, client)
     }

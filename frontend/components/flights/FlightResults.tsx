@@ -1,5 +1,9 @@
 'use client'
 
+import Image from 'next/image'
+
+import { SkywayBrand } from '@/components/SkywayBrand'
+
 import { useEffect, useState, useMemo, useRef } from 'react'
 import { ArrowRight, Check, Filter, Luggage, Plane, PlaneTakeoff, PlaneLanding, Utensils, X, ChevronLeft, ChevronRight, SlidersHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -48,7 +52,7 @@ function FlightCard({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex items-center gap-3">
             {!imgError ? (
-              <img 
+              <Image unoptimized width={64} height={40}
                 src={`/airlines/${flight.airline.code}.svg`} 
                 alt={flight.airline.name} 
                 className="h-10 w-16 object-contain rounded-lg border border-slate-100 p-1 bg-white"
@@ -67,7 +71,7 @@ function FlightCard({
             </div>
           </div>
           <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 border border-emerald-100">
-            {flight.source === 'DEMO' ? 'DEMO · Simulated flight' : 'Non-stop'}
+            {flight.source === 'DEMO' ? 'Simulated schedule' : 'Non-stop'}
           </span>
         </div>
 
@@ -310,15 +314,19 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
   }, [isReturnLeg])
 
   const [retrySearch, setRetrySearch] = useState(0)
-
-  // Fetch flights from real backend API
-  useEffect(() => {
-    let active = true
+  const queryKey = JSON.stringify([currentOrigin, currentDest, activeDate, retrySearch])
+  const [previousQuery, setPreviousQuery] = useState(queryKey)
+  if (previousQuery !== queryKey) {
+    setPreviousQuery(queryKey)
     setLoading(true)
     setFlights([])
     setSelectionError(null)
     setError(null)
+  }
 
+  // Fetch flights from real backend API
+  useEffect(() => {
+    let active = true
     const origin = currentOrigin
     const dest = currentDest
     const date = activeDate
@@ -422,12 +430,7 @@ export function FlightResults({ searchParams, onModify, onSelectFlight }: Flight
         <div className="border-b border-slate-200">
           <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-5 lg:px-8">
             <button onClick={onModify} className="flex items-center gap-3 cursor-pointer" aria-label="Skyway home">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-[#102a56] text-white">
-                <Plane className="size-5 -rotate-12" />
-              </span>
-              <span className="text-xl font-bold tracking-tight">
-                skyway<span className="text-[#f59e0b]">.</span>
-              </span>
+              <SkywayBrand />
             </button>
             <div className="flex items-center gap-3">
               <UserNav />

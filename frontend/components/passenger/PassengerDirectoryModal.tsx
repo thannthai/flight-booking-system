@@ -30,7 +30,12 @@ interface PassengerDirectoryModalProps {
   targetType?: 'Adult' | 'Child' | 'Infant'
 }
 
-export function PassengerDirectoryModal({
+export function PassengerDirectoryModal(props: PassengerDirectoryModalProps) {
+  const { user, isAuthenticated } = useAuth()
+  return props.isOpen ? <PassengerDirectoryContent key={`${user?.id ?? 'guest'}:${isAuthenticated}`} {...props} /> : null
+}
+
+function PassengerDirectoryContent({
   isOpen,
   onClose,
   onSelectPassenger,
@@ -40,7 +45,7 @@ export function PassengerDirectoryModal({
   const dialogRef = useDialog(isOpen, onClose)
   const { isAuthenticated } = useAuth()
   const [passengers, setPassengers] = useState<PassengerResponse[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(isAuthenticated)
   const [error, setError] = useState<string | null>(null)
   
   // View mode: 'list' | 'add' | 'edit'
@@ -60,28 +65,19 @@ export function PassengerDirectoryModal({
   const [formError, setFormError] = useState<string | null>(null)
 
   // Fetch saved passengers
-  const fetchPassengers = async () => {
-    if (!isAuthenticated) return
-    setLoading(true)
-    setError(null)
-    try {
-      const data = await api.getMyPassengers()
-      setPassengers(data || [])
-    } catch (err: any) {
-      console.error('Failed to load passenger directory:', err)
-      setError(err.message || 'Failed to load traveler directory')
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    if (isOpen && isAuthenticated) {
-      fetchPassengers()
-      setViewMode('list')
-      setFormError(null)
-    }
-  }, [isOpen, isAuthenticated])
+    if (!isAuthenticated) return
+    let active = true
+    api.getMyPassengers()
+      .then(data => { if (active) setPassengers(data || []) })
+      .catch((err: unknown) => {
+        if (!active) return
+        console.error('Failed to load passenger directory:', err)
+        setError((err instanceof Error && err.message) || 'Failed to load traveler directory')
+      })
+      .finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [isAuthenticated])
 
   if (!isOpen) return null
 
@@ -126,8 +122,8 @@ export function PassengerDirectoryModal({
     try {
       await api.deletePassenger(id)
       setPassengers(prev => prev.filter(p => p.id !== id))
-    } catch (err: any) {
-      alert(err.message || 'Failed to delete traveler')
+    } catch (err: unknown) {
+      alert((err instanceof Error && err.message) || 'Failed to delete traveler')
     }
   }
 
@@ -179,9 +175,9 @@ export function PassengerDirectoryModal({
         setPassengers(prev => [created, ...prev])
       }
       setViewMode('list')
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      setFormError(err.message || 'Failed to save traveler')
+      setFormError((err instanceof Error && err.message) || 'Failed to save traveler')
     } finally {
       setSubmitting(false)
     }

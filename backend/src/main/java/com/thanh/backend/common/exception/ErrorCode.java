@@ -51,6 +51,7 @@ public enum ErrorCode {
     INVALID_AIRCRAFT_SEATS(HttpStatus.BAD_REQUEST, "Business seats and economy seats total must equal total seats"),
     DATA_INTEGRITY_VIOLATION(HttpStatus.CONFLICT, "Database constraint violation"),
     PAYMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "Payment not found"),
+    PAYMENT_MODE_MISMATCH(HttpStatus.CONFLICT, "This pending payment was created in a different payment mode. Cancel this booking and create a new reservation; existing payments cannot be converted."),
     PAYMENT_STATUS_INVALID(HttpStatus.BAD_REQUEST, "Payment status is invalid for this operation"),
     BOOKING_STATUS_INVALID(HttpStatus.BAD_REQUEST, "Booking status is invalid for payment"),
     BOOKING_PAYMENT_EXPIRED(HttpStatus.BAD_REQUEST, "Booking payment deadline has expired"),

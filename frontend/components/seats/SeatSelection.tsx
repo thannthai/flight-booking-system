@@ -1,7 +1,11 @@
 'use client'
 
+import Image from 'next/image'
+
+import { SkywayBrand } from '@/components/SkywayBrand'
+
 import { useState, useEffect, useRef } from 'react'
-import { Plane, Check, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react'
+import { Plane, Check, ArrowRight, ArrowLeft, Armchair } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatVND } from '@/lib/format'
 import { assignSeats } from '@/lib/seats'
@@ -67,10 +71,10 @@ function SeatSelectionForm({
   // Dual-leg selection state
   const [activeLeg, setActiveLeg] = useState<'outbound' | 'return'>('outbound')
   const [outboundSeats, setOutboundSeats] = useState<(FlightSeatResponse | null)[]>(
-    initialSeats.length > 0 ? initialSeats : new Array(eligiblePax.length).fill(null)
+    Array.from({ length: eligiblePax.length }, (_, i) => initialSeats[i] || null)
   )
   const [returnSeats, setReturnSeats] = useState<(FlightSeatResponse | null)[]>(
-    initialReturnSeats.length > 0 ? initialReturnSeats : new Array(eligiblePax.length).fill(null)
+    Array.from({ length: eligiblePax.length }, (_, i) => initialReturnSeats[i] || null)
   )
   const [activePaxIndex, setActivePaxIndex] = useState(0)
 
@@ -95,10 +99,16 @@ function SeatSelectionForm({
   }
 
   // Fetch seat map(s)
-  useEffect(() => {
-    let active = true
+  const returnFlightId = returnFlight?.id
+  const seatQuery = JSON.stringify([flight.id, returnFlightId, seatReload, cabinClass])
+  const [previousQuery, setPreviousQuery] = useState(seatQuery)
+  if (previousQuery !== seatQuery) {
+    setPreviousQuery(seatQuery)
     setLoading(true)
     setSeatLoadError(false)
+  }
+  useEffect(() => {
+    let active = true
     const fetchPromises = [
       api.get<FlightSeatMapResponse>(`/flights/${flight.id}/seats`).then(res => {
         if (!active) return
@@ -107,9 +117,9 @@ function SeatSelectionForm({
       })
     ]
 
-    if (returnFlight) {
+    if (returnFlightId != null) {
       fetchPromises.push(
-        api.get<FlightSeatMapResponse>(`/flights/${returnFlight.id}/seats`).then(res => {
+        api.get<FlightSeatMapResponse>(`/flights/${returnFlightId}/seats`).then(res => {
           if (!active) return
           setReturnSeatMap(parseSeatMap(res.seats))
           setReturnSeats(old => old.map(s => res.seats.find(latest => latest.id === s?.id && latest.status !== 'BOOKED' && latest.cabinClass === cabinClass) || null))
@@ -125,7 +135,7 @@ function SeatSelectionForm({
         if (active) setLoading(false)
       })
     return () => { active = false }
-  }, [flight.id, returnFlight?.id, seatReload, cabinClass])
+  }, [flight.id, returnFlightId, seatReload, cabinClass])
 
   const toggleSeat = (seat: FlightSeatResponse) => {
     const isAlreadySelected = currentSeats.some(s => s?.id === seat.id)
@@ -140,6 +150,9 @@ function SeatSelectionForm({
     if (unassigned !== -1) setActivePaxIndex(unassigned)
   }
 
+  const outboundComplete = outboundSeats.length === eligiblePax.length && outboundSeats.every(Boolean)
+  const returnComplete = !returnFlight || (returnSeats.length === eligiblePax.length && returnSeats.every(Boolean))
+  const needsReturn = outboundComplete && !returnComplete
   const isAllSeatsSelected = outboundSeats.every(s => s !== null) && (!returnFlight || returnSeats.every(s => s !== null))
 
   const handleAutoAssign = () => {
@@ -225,12 +238,7 @@ function SeatSelectionForm({
         <div className="border-b border-slate-200">
           <div className="mx-auto flex h-[72px] max-w-7xl items-center justify-between px-5 lg:px-8">
             <button onClick={onHome} className="flex items-center gap-3 cursor-pointer" aria-label="Skyway home">
-              <span className="flex size-10 items-center justify-center rounded-xl bg-[#102a56] text-white">
-                <Plane className="size-5 -rotate-12" />
-              </span>
-              <span className="text-xl font-bold tracking-tight">
-                skyway<span className="text-[#f59e0b]">.</span>
-              </span>
+              <SkywayBrand />
             </button>
             <div className="flex items-center gap-3">
               <UserNav />
@@ -277,7 +285,7 @@ function SeatSelectionForm({
             <div className="flex flex-col gap-3">
               {/* Outbound */}
               <div className={`flex items-center gap-4 p-2 rounded-xl transition-all ${activeLeg === 'outbound' ? 'bg-white/10 ring-1 ring-amber-400' : 'opacity-80'}`}>
-                <img src={`/airlines/${flight.logo}.svg`} alt={flight.airline} className="h-8 w-12 object-contain bg-white rounded-lg p-1" />
+                <Image unoptimized width={48} height={32} src={`/airlines/${flight.logo}.svg`} alt={flight.airline} className="h-8 w-12 object-contain bg-white rounded-lg p-1" />
                 <div>
                   <p className="text-sm font-bold">
                     <span className="text-[10px] px-2 py-0.5 rounded bg-blue-500/30 text-blue-200 mr-2 uppercase font-black tracking-wider">Outbound</span>
@@ -295,7 +303,7 @@ function SeatSelectionForm({
               {/* Return (if present) */}
               {returnFlight && (
                 <div className={`flex items-center gap-4 p-2 rounded-xl transition-all ${activeLeg === 'return' ? 'bg-white/10 ring-1 ring-amber-400' : 'opacity-80'}`}>
-                  <img src={`/airlines/${returnFlight.logo}.svg`} alt={returnFlight.airline} className="h-8 w-12 object-contain bg-white rounded-lg p-1" />
+                  <Image unoptimized width={48} height={32} src={`/airlines/${returnFlight.logo}.svg`} alt={returnFlight.airline} className="h-8 w-12 object-contain bg-white rounded-lg p-1" />
                   <div>
                     <p className="text-sm font-bold">
                       <span className="text-[10px] px-2 py-0.5 rounded bg-amber-500/30 text-amber-200 mr-2 uppercase font-black tracking-wider">Return</span>
@@ -390,7 +398,8 @@ function SeatSelectionForm({
                   Cockpit
                 </div>
 
-                {/* Rows */}
+                <p className="mb-4 text-center text-sm text-slate-500">Your search is for {cabinClass === 'BUSINESS' ? 'Business' : 'Economy'}. Seats in the other cabin cannot be selected. To change cabin, start a new search.</p>
+              {/* Rows */}
                 <div className="flex flex-col gap-3 relative z-10">
                   {currentSeatMap.map(([row, rowSeats], index) => {
                     const isBusiness = rowSeats.some(s => s.cabinClass === 'BUSINESS')
@@ -433,6 +442,7 @@ function SeatSelectionForm({
                                 <button
                                   key={seat.id}
                                   type="button"
+                                  title={seat.cabinClass !== cabinClass ? 'Different cabin from your search' : seat.status !== 'AVAILABLE' && !isSelected ? 'Seat unavailable' : `Select seat ${seat.seatNo}`}
                                   disabled={!isAvailable && !isSelected}
                                   onClick={() => toggleSeat(seat)}
                                   className={`size-9 sm:size-10 rounded-lg sm:rounded-xl flex flex-col items-center justify-center font-bold text-xs transition-all cursor-pointer relative ${
@@ -470,6 +480,7 @@ function SeatSelectionForm({
                                 <button
                                   key={seat.id}
                                   type="button"
+                                  title={seat.cabinClass !== cabinClass ? 'Different cabin from your search' : seat.status !== 'AVAILABLE' && !isSelected ? 'Seat unavailable' : `Select seat ${seat.seatNo}`}
                                   disabled={!isAvailable && !isSelected}
                                   onClick={() => toggleSeat(seat)}
                                   className={`size-9 sm:size-10 rounded-lg sm:rounded-xl flex flex-col items-center justify-center font-bold text-xs transition-all cursor-pointer relative ${
@@ -511,7 +522,6 @@ function SeatSelectionForm({
         {/* Booking Summary Sidebar (Sticky) */}
         <aside className="h-fit rounded-3xl border border-slate-200 bg-white shadow-sm sticky top-[140px] overflow-hidden">
           <div className="bg-slate-50 p-6 border-b border-slate-100">
-            <p className="text-[10px] font-bold uppercase tracking-[.2em] text-slate-400">Seat assignments</p>
             <h2 className="mt-1 text-2xl font-bold text-[#102a56]">Assign {cabinClass.toLowerCase()} seats</h2>
           </div>
           
@@ -589,6 +599,7 @@ function SeatSelectionForm({
                   {holdError}
                 </div>
               )}
+              {!isAllSeatsSelected && <p className="mt-3 text-sm text-slate-500">{needsReturn ? 'Outbound seats selected. Select seats for the return flight to continue.' : 'Select a seat for each passenger on each flight. Auto-assign is optional.'}</p>}
               {!isAllSeatsSelected && (
                 <Button
                   type="button"
@@ -596,16 +607,16 @@ function SeatSelectionForm({
                   onClick={handleAutoAssign}
                   className="w-full mt-4 rounded-xl border-dashed border-slate-300 py-5 text-xs font-bold text-slate-700 hover:bg-slate-50 cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <Sparkles className="size-4 text-[#f59e0b]" />
+                  <Armchair className="size-4 text-[#f59e0b]" />
                   Auto-assign Seats (Lowest Available Fare)
                 </Button>
               )}
               <Button 
-                disabled={!isAllSeatsSelected || holding || loading || seatLoadError}
-                onClick={handleContinue} 
+                disabled={(!isAllSeatsSelected && !needsReturn) || holding || loading || seatLoadError}
+                onClick={() => { if (needsReturn) { setActiveLeg('return'); setActivePaxIndex(returnSeats.findIndex(s => !s)); } else void handleContinue() }}
                 className="w-full mt-3 rounded-xl bg-[#f59e0b] py-6 text-base font-bold text-[#102a56] shadow-md shadow-amber-500/20 hover:bg-[#d97706] disabled:opacity-50 disabled:shadow-none cursor-pointer"
               >
-                {holding ? 'Holding Seats...' : 'Continue to Payment'}
+                {holding ? 'Holding Seats...' : needsReturn ? 'Choose return seats' : 'Continue to Payment'}
                 <ArrowRight className="size-5 ml-2" />
               </Button>
             </div>

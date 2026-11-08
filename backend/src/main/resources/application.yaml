@@ -70,6 +70,11 @@ app:
     interval-ms: ${DEMO_FLIGHTS_INTERVAL_MS:3600000}
     max-flights-per-day: ${DEMO_FLIGHTS_MAX_FLIGHTS_PER_DAY:12}
     max-window-seats: ${DEMO_FLIGHTS_MAX_WINDOW_SEATS:90000}
+  payment:
+    mode: ${PAYMENT_MODE:PAYOS}
+    allowed-jdbc-url: ${DEMO_PAYMENT_ALLOWED_JDBC_URL:}
+    accounts-enabled: ${DEMO_ACCOUNTS_ENABLED:false}
+    account-password: ${DEMO_ACCOUNT_PASSWORD:}
   booking:
     hold-ttl-seconds: 900
 

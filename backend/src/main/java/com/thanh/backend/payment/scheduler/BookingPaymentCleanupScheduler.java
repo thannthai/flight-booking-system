@@ -88,7 +88,7 @@ public class BookingPaymentCleanupScheduler {
                 if (payment != null && payment.getStatus() == PaymentStatus.PENDING) {
                     payment.setStatus(PaymentStatus.EXPIRED);
                     paymentRepository.save(payment);
-                    orderCode = payment.getOrderCode();
+                    if ("PAYOS".equals(payment.getProvider())) orderCode = payment.getOrderCode();
                 }
             }
 

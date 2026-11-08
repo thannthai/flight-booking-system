@@ -7,3 +7,12 @@ test('adult document required, child optional, passport expiry not invented',()=
 test('normalized duplicate seated documents rejected; same names with different documents allowed',()=>{assert.ok(validatePassengers([form('1990-01-01','A123'),form('1991-01-01',' a123 ')],['ADULT','ADULT'],'2026-11-01').pax_1_id);assert.deepEqual(validatePassengers([form('1990-01-01','A'),form('1991-01-01','B')],['ADULT','ADULT'],'2026-11-01'),{})})
 test('infant may omit document or share guardian document, not an unrelated document',()=>{const adult=form('1990-01-01'),infant={...form('2026-01-01',''),guardianIndex:0};assert.deepEqual(validatePassengers([adult,infant],['ADULT','INFANT'],'2026-11-01'),{});assert.ok(validatePassengers([adult,{...infant,id:'OTHER'}],['ADULT','INFANT'],'2026-11-01').pax_1_id);assert.deepEqual(validatePassengers([adult,{...infant,id:'A123'}],['ADULT','INFANT'],'2026-11-01'),{})})
 test('one infant per adult; directory removal cannot silently preserve old document',()=>{assert.ok(validatePassengers([form('1990-01-01'),{...form('2026-01-01',''),guardianIndex:0},{...form('2026-01-02',''),guardianIndex:0}],['ADULT','INFANT','INFANT'],'2026-11-01').pax_2_guardian);assert.equal(documentRemovalUnsupported('OLD',''),true);assert.equal(documentRemovalUnsupported('OLD','NEW'),false)})
+
+test('fictional demo passengers validate for adults, children and distinct infant guardians',()=>{
+ const {demoPassengerDraft}=require('../lib/demo-passengers.ts');const {validatePassengerDraft}=require('../lib/passenger-validation.ts')
+ const slots=['Adult','Adult','Child','Infant','Infant'].map(type=>({type,title:type}))
+ const a=demoPassengerDraft(slots,'2026-11-04','FIRST'),b=demoPassengerDraft(slots,'2026-11-04','SECOND')
+ assert.deepEqual(validatePassengerDraft(a,slots,'2026-11-04'),{})
+ assert.notEqual(a.passengers[0].id,b.passengers[0].id)
+ assert.equal(a.passengers[3].id,a.passengers[0].id);assert.equal(a.passengers[4].guardianIndex,1)
+})

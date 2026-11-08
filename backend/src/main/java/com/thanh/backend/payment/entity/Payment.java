@@ -67,6 +67,17 @@ public class Payment extends BaseEntity {
     @Column(name = "qr_code", columnDefinition = "TEXT")
     private String qrCode;
 
+    @Column(name = "bank_bin")
+    private String bankBin;
+    @Column(name = "account_number")
+    private String accountNumber;
+    @Column(name = "account_name")
+    private String accountName;
+    @Column(name = "transfer_description", columnDefinition = "TEXT")
+    private String transferDescription;
+    @Column(name = "transfer_amount", precision = 12, scale = 2)
+    private BigDecimal transferAmount;
+
     @Column(name = "callback_data", columnDefinition = "TEXT")
     private String callbackData;
 

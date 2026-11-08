@@ -12,5 +12,7 @@ public interface PaymentService {
 
     PaymentResponse cancelPayment(Long paymentId, Long currentUserId, String cancelReason);
 
+    PaymentResponse confirmDemoPayment(Long paymentId, Long currentUserId);
+
     void processWebhookPayment(Webhook webhook);
 }
