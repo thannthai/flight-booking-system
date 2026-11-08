@@ -84,3 +84,28 @@ payos:
   checksum-key: ${PAYOS_CHECKSUM_KEY}
   return-url: ${PAYOS_RETURN_URL:http://localhost:5173/payment/success}
   cancel-url: ${PAYOS_CANCEL_URL:http://localhost:5173/payment/cancel}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: "prod | production"
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+cookie:
+  secure: ${COOKIE_SECURE:true}
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS}
+
+payos:
+  return-url: ${PAYOS_RETURN_URL}
+  cancel-url: ${PAYOS_CANCEL_URL}
