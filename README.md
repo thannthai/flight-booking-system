@@ -1,7 +1,5 @@
 # Flight Booking System
 
-Java backend engineering through a complete flight booking workflow.
-
 ![Java 21](https://img.shields.io/badge/Java-21-334155?style=flat-square&logo=openjdk&logoColor=white)
 ![Spring Boot 3.5](https://img.shields.io/badge/Spring_Boot-3.5-334155?style=flat-square&logo=springboot&logoColor=white)
 ![Next.js 16](https://img.shields.io/badge/Next.js-16-334155?style=flat-square&logo=nextdotjs&logoColor=white)
@@ -13,11 +11,13 @@ Java backend engineering through a complete flight booking workflow.
 
 A full-stack flight booking application for searching flights, selecting seats, managing passengers and completing checkout through payOS. Built with a Spring Boot backend and Next.js frontend, it focuses on consistent reservations under concurrent requests and asynchronous payment confirmation.
 
+**Try demo** uses one shared account with simulated payment and no money transfer. Ordinary registered accounts use live payOS checkout. See [Run and try the demo](docs/04-demo-experience.md) for setup and the visitor flow.
+
 Flights marked `DEMO` are simulated inventory. Printed e-tickets are demo booking confirmations, not airline boarding passes.
 
 ## Features
 
-- **Flight discovery:** domestic/international airport data, one-way and round-trip search, airline/fare/time filters and airport-local departure/arrival times.
+- **Flight discovery:** domestic/international airport data, one-way and round-trip search, airline/fare/time filters and airport-local departure/arrival times, plus a route map that follows the selected airports.
 - **Seat selection:** economy/business seat maps, auto-assignment and temporary holds after sign-in.
 - **Passenger management:** adult/child/infant validation, guardian selection, saved passenger quickfill and optional baggage, meal and insurance add-ons.
 - **Booking and payment:** backend-calculated totals, booking references, payOS QR/checkout links and status recovery after reload.
@@ -29,11 +29,10 @@ Confirmation notifications are recorded in the database; email delivery is not i
 
 ## Technical Highlights
 
-- **Concurrency-safe allocation:** Redis leases work with persisted ownership, expiry checks and conditional seat updates to protect competing reservations.
-- **Fixed hold deadlines:** retries reuse a live hold without extending its expiry; stale cleanup must not release a newer hold.
+- **Concurrency-safe allocation:** Redis leases and conditional seat updates protect competing reservations. Retries preserve hold deadlines; stale cleanup cannot release a newer hold.
 - **Transaction consistency:** booking records, legs, passengers, tickets and seat claims commit together. Provider network calls run outside payment preparation/attachment transactions.
 - **Idempotent payment confirmation:** verified receipts are checked against the payable amount and deadline; duplicate callbacks do not issue tickets again, and late receipts cannot reopen cancelled bookings.
-- **Session lifecycle:** memory-held access tokens, HttpOnly refresh cookies and stale-response checks protect logout and account switching.
+- **Session lifecycle:** single-use refresh tokens and account-bound cleanup protect session recovery, logout and account switching.
 - **Recovery after uncertain requests:** checkout avoids automatically resending a booking request whose previous outcome is unknown.
 
 ## Tech Stack
@@ -44,7 +43,8 @@ Confirmation notifications are recorded in the database; email delivery is not i
 | Frontend | Next.js 16 App Router, React 19, TypeScript and Tailwind CSS. |
 | Persistence | PostgreSQL with Flyway migrations for durable business records and schema evolution. |
 | Temporary state | Redis 7 for seat leases and authentication-related state. |
-| Payments | payOS SDK, QR checkout and verified webhooks. |
+| Payments | payOS SDK, QR checkout and verified webhooks; marked demo accounts use simulated checkout. |
+| Maps | MapLibre GL JS and OpenFreeMap. |
 | Testing | JUnit, Mockito and PostgreSQL/Redis Testcontainers; Node/jsdom regressions and Playwright browser smoke. |
 | Tooling | Maven Wrapper, pnpm, Docker Compose and GitHub Actions. |
 
@@ -58,11 +58,13 @@ flowchart LR
     DB[(PostgreSQL)]
     Redis[(Redis)]
     PayOS["payOS"]
+    OpenFreeMap["OpenFreeMap"]
 
     Browser <-->|Pages and API requests| Frontend
     Frontend <-->|REST /api/v1| Backend
     Backend <--> DB
     Backend <--> Redis
+    Browser -->|Map style and tiles| OpenFreeMap
     Backend -->|Checkout link| PayOS
     PayOS -->|Webhook verified by backend| Backend
 ```
@@ -103,7 +105,7 @@ export PAYOS_CANCEL_URL='http://localhost:3000/payment/cancel'
 ./mvnw spring-boot:run
 ```
 
-The API runs at `http://localhost:8080`; Flyway applies migrations at startup. Spring Boot reads exported variables and does not automatically load `backend/.env`. Keep credentials out of Git. Payment confirmation requires a configured, publicly reachable webhook; automated payment tests mock the gateway.
+The API runs at `http://localhost:8080`; Flyway applies migrations at startup. Spring Boot reads exported variables and does not automatically load `backend/.env`. Keep credentials out of Git. Payment confirmation requires a configured, publicly reachable webhook.
 
 ### 3. Start the frontend
 
@@ -117,9 +119,17 @@ test -f .env.local || cp environment.example .env.local
 pnpm dev
 ```
 
-Open **http://localhost:3000**. The template keeps browser calls at `/api/v1` and sets server-only `BACKEND_API_URL=http://localhost:8080/api/v1`.
+Open **http://localhost:3000**. API requests are forwarded to the local backend.
 
-Fresh migrations seed airports, not flight schedules. Inventory must be provisioned through admin APIs using an existing `ROLE_ADMIN` account; registration creates `ROLE_USER`. The optional demo generator requires existing configured airlines and explicit local/demo opt-in; its templates are in [demo-flight-templates.yaml](backend/src/main/resources/demo-flight-templates.yaml) and its activation settings in [application.yaml](backend/src/main/resources/application.yaml).
+A fresh database includes airports but no flight schedules. Add inventory through
+admin APIs or configure the [optional demo generator](docs/02-system-architecture.md#54-events-listeners-and-jobs) before searching.
+
+## Deployment configuration
+
+Use HTTPS and set the frontend's server-only
+`BACKEND_API_URL=https://<backend-host>/api/v1` before building.
+See [deployment settings](docs/02-system-architecture.md#55-deployment-configuration-boundary)
+for backend profiles, required environment variables and cookie configuration.
 
 ## API Documentation
 
@@ -142,25 +152,15 @@ From `frontend/`:
 
 ```sh
 pnpm test
-BACKEND_API_URL=https://backend.example.invalid/api/v1 pnpm exec next typegen --webpack
-pnpm typecheck
-pnpm lint
-pnpm audit --prod
-BACKEND_API_URL=https://backend.example.invalid/api/v1 pnpm build
 ```
 
-The HTTPS placeholder is for build/type-generation checks without backend calls. Build intentionally uses Webpack. After building, browser smoke can run with:
-
-```sh
-pnpm exec playwright install chromium
-pnpm test:e2e
-```
-
-Integration tests use isolated services; browser smoke uses mocked APIs. Neither requires real money transfers or production data.
+See [verification commands](AGENTS.md#commands-and-verification) for type checking,
+lint, dependency audit, production build and Playwright. Integration tests use
+isolated services; browser tests mock APIs.
 
 ## Documentation
 
 - [Project Specification](docs/01-project-specification.md) — features, scope and key business rules.
 - [System Architecture](docs/02-system-architecture.md) — module boundaries, integrations and design decisions.
 - [Database Design](docs/03-database-design.md) — tables, relationships and integrity protections.
-- [Portfolio Demo](docs/04-demo-experience.md) — isolated demo configuration, public accounts and simulated checkout.
+- [Run and Try the Demo](docs/04-demo-experience.md) — backend setup and the shared-account visitor flow.

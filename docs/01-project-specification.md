@@ -8,8 +8,6 @@ The central challenge is keeping reservations reliable when users compete for se
 
 ## 2. Objectives and scope
 
-The project demonstrates a complete customer booking journey, consistent reservation/payment handling and a maintainable Next.js frontend with a Spring Boot backend.
-
 Its scope includes flight discovery, passenger details, seat holds, checkout, payment status, personal booking history and a passenger directory. Administrators manage catalog and flight inventory through APIs; an admin dashboard is outside the current frontend scope.
 
 The application manages its own inventory. Flights labelled `DEMO` are simulated; there is no live airline reservation or airport check-in integration. Printed e-tickets are demo booking confirmations, not airline boarding passes.
@@ -27,12 +25,12 @@ Registration creates a customer account. Resource ownership and administrative p
 
 ## 4. Functional scope and implementation status
 
-**Implemented** means executable functionality exists. **Partially Implemented** means only part of the capability exists. **Planned** refers to historical design intentions, not a delivery commitment. **Not Verified** describes missing verification evidence, independently of implementation status.
+Status describes the current implementation. Deployed provider integration requires separate verification.
 
 | Area | Functionality | Status |
 | --- | --- | --- |
 | Authentication | Register, login, logout and restore sessions through refresh. | Implemented |
-| Flight search | Search routes/dates; filter by airline, maximum base fare and departure period; sort by price, departure or duration. | Implemented |
+| Flight search | Preview the selected route on a map; search routes/dates; filter by airline, maximum base fare and departure period; sort by price, departure or duration. | Implemented |
 | Journey selection | Choose one-way or round-trip flights and economy/business cabin. | Implemented |
 | Passenger details | Enter contact/traveler information, assign infant guardians and choose add-ons. | Implemented |
 | Seat selection | Select or auto-assign seats on each leg; hold seats after sign-in. | Implemented |
@@ -40,6 +38,7 @@ Registration creates a customer account. Resource ownership and administrative p
 | Payment | Display the returned QR/checkout link, recover payment after reload and show backend-confirmed status. | Implemented; deployed provider integration Not Verified |
 | History and tickets | Review personal bookings, resume payment, display/print demo e-tickets and cancel pending reservations. | Implemented |
 | Passenger directory | Save, edit, quickfill and remove own passenger entries. Document-only removal is unsupported. | Implemented within this scope |
+| Demo | Try the booking flow through one shared account and simulated payment. | Implemented; enabled explicitly on demo/dev backends |
 | Administration | Maintain airports, airlines, aircraft and flights through APIs. | Implemented |
 | Notifications | Record booking confirmation; email delivery is not implemented. | Partially Implemented |
 | Voucher/refund workflows | Voucher validation, completed-booking cancellation approval and refund execution. | Planned; no complete workflow |
@@ -48,7 +47,7 @@ Registration creates a customer account. Resource ownership and administrative p
 
 ### Sign in and manage a session
 
-A guest registers or signs in. The application restores the session when possible after reload. Logout and account changes clear private checkout data so another account's information is not displayed.
+A guest registers or signs in; Try demo uses one shared demo account. The application restores the session when possible after reload. Logout and account changes clear private checkout data so another account's information is not displayed.
 
 ### Search, reserve and pay
 
@@ -58,6 +57,8 @@ A guest registers or signs in. The application restores the session when possibl
 4. Select seats, sign in if needed and obtain a hold.
 5. Explicitly confirm the booking and receive its reference and final total.
 6. Pay using the supplied QR or payOS checkout, then view confirmation and tickets after backend verification.
+
+The shared demo account confirms a simulated payment instead of transferring money through payOS; ordinary registered accounts keep the live payment flow. The route map illustrates the airport connection, not a live aircraft position or operational flight path.
 
 If a booking request's outcome is unknown, the application directs the user to My Bookings instead of automatically submitting it again. Payment status can be recovered after reload; returning from payOS does not itself confirm payment.
 
@@ -84,8 +85,6 @@ Customers can view booking history, resume an eligible pending payment, print co
 
 Prices shown in search are adult base fares; checkout uses the backend-confirmed total. Departure/arrival times use their respective airport timezones. Passport/visa eligibility rules are outside the implemented validation scope.
 
-## 7. Quality objectives and references
-
-The system aims for consistent reservations, backend-enforced authorization, recoverable checkout and responsive customer screens. Automated tests cover selected booking/payment concurrency, session handling, pricing, validation and browser flows. Browser smoke uses mocked APIs; real deployed payment integration remains Not Verified by those tests.
+## 7. References
 
 See [System Architecture](02-system-architecture.md) for component interaction and [Database Design](03-database-design.md) for stored relationships. Exact request contracts are defined by the [backend DTOs](../backend/src/main/java/com/thanh/backend/booking/dto/request/).

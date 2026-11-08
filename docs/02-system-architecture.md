@@ -1,12 +1,12 @@
 # Flight Booking System — System Architecture
 
-The system uses a Spring Boot modular monolith behind a Next.js frontend. This document explains component responsibilities, integration and the main design trade-offs; [Project Specification](01-project-specification.md) describes functionality.
+This document covers component responsibilities, integration and design trade-offs. See [Project Specification](01-project-specification.md) for functionality.
 
 ## 1. Architecture overview
 
 Flight Booking System uses a **Spring Boot modular monolith** behind a Next.js customer frontend. Backend packages organize authentication, catalog, flight inventory, booking and payment responsibilities. They run within one Spring application and share a PostgreSQL database and transaction manager.
 
-These are logical modules, not independently deployed services. Calls between them are Java method calls and repository access, rather than internal HTTP requests or messages between microservices. Next.js and Spring Boot are separate application boundaries; payOS is an external system.
+Modules communicate through Java calls and shared repositories. Next.js and Spring Boot are deployed separately.
 
 The main architectural goals are:
 
@@ -16,7 +16,7 @@ The main architectural goals are:
 - Make reloads and asynchronous confirmation recoverable through persisted state.
 - Keep the system understandable and testable at portfolio scale.
 
-A single backend application makes related booking/payment updates easier to coordinate and avoids distributed service transactions. The trade-off is shared release/runtime boundaries and substantial coupling between core modules. Package organization is not enforced isolation: there is no Spring Modulith or separate Maven-module boundary in the current build.
+Shared persistence supports local transactions, but couples core modules to the same runtime and release boundary.
 
 ## 2. Overall system architecture
 
@@ -28,6 +28,7 @@ flowchart LR
     PG[(PostgreSQL)]
     Redis[(Redis)]
     PayOS["payOS"]
+    OpenFreeMap["OpenFreeMap"]
 
     Browser <-->|Pages and same-origin API requests| Next
     Next <-->|REST /api/v1| Backend
@@ -35,13 +36,14 @@ flowchart LR
     Backend <-->|Seat leases and auth state| Redis
     Backend -->|Create, query or cancel payment link| PayOS
     PayOS -->|Webhook verified by backend| Backend
+    Browser -->|Public map style and tiles| OpenFreeMap
     Browser -->|Optional hosted checkout| PayOS
     PayOS -.->|Browser return or cancel navigation| Browser
 ```
 
-The frontend node represents the Next.js application, including client components executed in the browser and server-side API forwarding. The API proxy is a Next.js rewrite, not a second booking service or an API gateway with its own business rules.
+Next.js serves browser components and forwards API requests through a rewrite.
 
-Most interactions are synchronous request/response operations: flight search, holding seats, booking creation and payment-link initialization. Webhook delivery is asynchronous relative to customer checkout, although each webhook is an HTTP request handled by the backend. Background jobs and asynchronous listeners also execute within the Spring application.
+Search, holds, booking creation and payment initialization use HTTP request/response. Webhooks confirm payment independently of the browser; scheduled jobs and listeners run inside Spring Boot.
 
 The browser does not access PostgreSQL or Redis. It can open payOS checkout, but the backend controls the payable amount and interprets the verified payment notification.
 
@@ -56,10 +58,10 @@ The browser does not access PostgreSQL or Redis. It can open payOS checkout, but
 | `airline` | Airline metadata and administrative maintenance. |
 | `aircraft` | Aircraft ownership, registrations and cabin capacity configuration. |
 | `flight` | Flight search/details, seat maps and initial seat inventory, flight administration and optional demo generation. |
-| `booking` | Seat holds, passenger directory, booking/leg/passenger/ticket records, pricing and pending-booking cancellation. Tickets belong here; there is no separate ticket service. |
+| `booking` | Seat holds, passenger directory, booking/leg/passenger/ticket records, pricing and pending-booking cancellation. |
 | `payment` | Payment intents, payOS adapter/configuration, verified webhook processing, cancellation coordination, payment-success events/listener and unpaid-booking timeout cleanup. |
-| `notification` | Notification entities, status/type definitions and persistence. It does not implement an email-delivery service. |
-| `common` | API/page envelopes, error handling, shared entity metadata, JPA timestamp auditing and cookie utilities. It does not own booking or payment policy. |
+| `notification` | Notification entities, status/type definitions and persistence. |
+| `common` | API/page envelopes, error handling, shared entity metadata, JPA timestamp auditing, cookie utilities and production environment validation. |
 
 ### 3.2 Important dependencies
 
@@ -94,11 +96,9 @@ flowchart TB
     class Auth,Notification,Catalog,Common support
 ```
 
-Booking, Payment and Flight form the core; the other modules provide identity, notification, catalog or shared support. Arrows show selected source-level dependencies, not HTTP calls or execution order. The arrow to **Catalog support** summarizes Flight's access to `airport`, `aircraft` and `airline`. This is a visual group, not a new module or deployment boundary. Repeated shared-infrastructure dependencies are omitted.
+Arrows show source-level dependencies. Catalog support groups `airport`, `aircraft` and `airline` for readability.
 
-The most important coupling is **Booking ↔ Payment**. Booking cancellation accesses payment persistence and the gateway; payment confirmation/cancellation accesses booking, ticket and seat persistence directly. This is source-level coupling, not necessarily a circular Spring bean dependency. The payment-success listener is located in `payment/event` and writes through the notification repository; the notification package is not a subscriber service on a message bus.
-
-Flight services access catalog repositories directly. Catalog deletion checks also consult flight references. These shared repositories/entities make consistency practical in a monolith, but extracting a module would require replacing these dependencies and reconsidering transaction ownership.
+Booking cancellation accesses payment persistence and the gateway. Payment confirmation/cancellation accesses booking, ticket and seat persistence. Flight services read catalog repositories, and catalog deletion checks flight references. These shared entities and repositories simplify transactions but would need separation before extracting independent services.
 
 ### 3.3 Request handling pattern
 
@@ -116,7 +116,7 @@ PostgreSQL holds persistent business state: users, catalog/inventory, bookings a
 
 Flyway owns versioned schema changes. The complete migration sequence matters: later migrations refine payment states, uniqueness and flight provenance. Hibernate validates entity/schema compatibility rather than generating the schema. Foreign keys and selected unique constraints complement service validation; they do not replace every business check.
 
-All modules share a database and persistence model. Booking creation can therefore save its related records and seat claims in one local database transaction. Eligible payment confirmation likewise updates payment, booking and tickets together. There is no separate payment database or event-sourced projection.
+All modules share a database and persistence model. Booking creation can therefore save its related records and seat claims in one local database transaction. Eligible payment confirmation likewise updates payment, booking and tickets together.
 
 ### 4.2 Redis has distinct operational roles
 
@@ -142,9 +142,11 @@ Concurrency and recovery behavior are exercised by the [backend integration test
 
 ### 5.1 Frontend and API proxy
 
-The App Router supplies the main booking page and `/payment/[result]`. The main page composes client-side search, passenger entry, seat selection and payment steps; they are not separate backend services or individual App Router pages. Domain components own their forms/interactions, while shared checkout models/builders map data to API DTOs.
+The App Router supplies the main booking page and `/payment/[result]`. The main page composes search, passenger entry, seat selection and payment steps. Domain components own forms/interactions; shared checkout models/builders map data to API DTOs.
 
 The browser API facade delegates HTTP transport, session coordination and typed domain methods to separate helpers. Browser requests target same-origin `/api/v1`; the rewrite forwards them to server-only `BACKEND_API_URL`. The proxy does not calculate authoritative fares, decide ownership or confirm payment.
+
+MapLibre loads OpenFreeMap styles/tiles in the browser. The route is drawn locally from airport coordinates, with a static coordinate fallback. Map loading has bounded retries and online recovery.
 
 This arrangement keeps refresh-cookie requests first-party to the browser. The backend still has explicit CORS/security rules; actual cookie forwarding and secure-cookie behavior depend on hosting configuration and require integration verification.
 
@@ -152,17 +154,21 @@ This arrangement keeps refresh-cookie requests first-party to the browser. The b
 
 Register/login return an access token and user while setting the refresh token through `Set-Cookie`. The frontend keeps the access token in memory and sends it as Bearer authorization; refresh uses the HttpOnly cookie. The backend validates JWT type/expiry/revocation and loads the current user/authorities for protected requests.
 
-The session coordinator shares refresh requests and discards responses from obsolete sessions. Logout/account changes clear private drafts. Reload recovery uses tab-local storage; uncertain booking outcomes require reconciliation through history rather than automatic resubmission.
+Refresh verifies token type/expiry and atomically deletes its Redis registration; only the successful consumer receives replacement tokens. Token-family-wide replay revocation is not implemented.
 
-**Sources:** [Next rewrite](../frontend/next.config.mjs), [API facade](../frontend/lib/api.ts), [session coordination](../frontend/lib/auth-session.ts), [security configuration](../backend/src/main/java/com/thanh/backend/auth/security/SecurityConfig.java), [cookie handling](../backend/src/main/java/com/thanh/backend/common/utils/CookieUtils.java).
+The session coordinator shares refresh requests within a tab and discards responses from obsolete sessions. In supported browsers on HTTPS/localhost, a same-origin Web Lock serializes refresh, login and logout cookie mutations across tabs. Without Web Locks, per-tab coordination remains; cross-tab serialization is not guaranteed. Logout/account changes clear private drafts. Reload recovery uses tab-local storage; uncertain booking outcomes require reconciliation through history rather than automatic resubmission.
+
+**Sources:** [JWT rotation](../backend/src/main/java/com/thanh/backend/auth/service/JwtService.java), [route map](../frontend/components/maps/FlightRouteMap.tsx), [Next rewrite](../frontend/next.config.mjs), [API facade](../frontend/lib/api.ts), [session coordination](../frontend/lib/auth-session.ts), [security configuration](../backend/src/main/java/com/thanh/backend/auth/security/SecurityConfig.java), [cookie handling](../backend/src/main/java/com/thanh/backend/common/utils/CookieUtils.java).
 
 ### 5.3 payOS and payment observation
 
 The payment module calls payOS through a gateway interface backed by the provider SDK. It creates/reuses checkout links, can query a link during initialization reconciliation, submits asynchronous link cancellation and verifies webhook signatures.
 
+Marked demo accounts use an authenticated simulated-confirmation endpoint, while ordinary accounts retain payOS. Both use persisted booking/payment state and the existing deadline; the simulation does not bypass ownership or reopen terminal bookings. The public demo entry uses one shared account.
+
 The backend receives a webhook and verifies it **before** applying payment rules. Eligible receipts update persisted payment/booking/ticket state; duplicate or terminal receipts follow the existing consistency protections. A browser redirect has no authority to perform these transitions.
 
-The frontend renders the returned QR payload locally and periodically reads payment status plus booking details. Those status reads query application persistence, not payOS on every poll. There is no implemented WebSocket/SSE payment push channel. Return/cancel pages resume this same authenticated status-reading flow.
+The frontend renders the returned QR payload locally and periodically reads payment status plus booking details. Those status reads query application persistence, not payOS on every poll. Return/cancel pages resume this same authenticated status-reading flow.
 
 ### 5.4 Events, listeners and jobs
 
@@ -174,9 +180,23 @@ The frontend renders the returned QR payload locally and periodically reads paym
 | Optional demo generation | A startup/scheduled process in `flight` generates simulated inventory through a transactional writer, subject to environment/target checks and inventory budgets. |
 | Lease cleanup | Internal deferred cleanup work in `booking`; it is not a notification/event-delivery queue. |
 
+A fresh database seeds airports but no flight schedules. An existing `ROLE_ADMIN` account can provision inventory through admin APIs; registration creates `ROLE_USER`. The optional demo generator requires configured airlines/airports and explicit local/demo opt-in. Its routes are in [demo-flight-templates.yaml](../backend/src/main/resources/demo-flight-templates.yaml), with activation and database allowlist settings in [application.yaml](../backend/src/main/resources/application.yaml).
+
 These events and jobs run inside Spring Boot. In-process asynchronous execution is not a durable message queue; follow-up delivery is best-effort and separate from the committed booking/payment outcome.
 
 **Sources:** [gateway adapter](../backend/src/main/java/com/thanh/backend/payment/service/impl/PayOSGatewayServiceImpl.java), [success listener](../backend/src/main/java/com/thanh/backend/payment/event/PaymentSuccessEventListener.java), [timeout job](../backend/src/main/java/com/thanh/backend/payment/scheduler/BookingPaymentCleanupScheduler.java), [demo generator](../backend/src/main/java/com/thanh/backend/flight/demo/DemoFlightGenerator.java).
+
+### 5.5 Deployment configuration boundary
+
+The [production environment validator](../backend/src/main/java/com/thanh/backend/common/config/ProductionEnvironmentValidator.java) checks required credentials and HTTPS settings before datasource initialization.
+
+For the portfolio on Render + Vercel, keep the backend's `demo`/`dev` Spring profile when using Try demo. Set `COOKIE_SECURE=true` on the HTTPS-hosted backend. Vercel's Production environment does not select the backend Spring profile.
+
+For a non-demo backend, activate `prod` or `production` and supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `CORS_ALLOWED_ORIGINS`, `PAYOS_RETURN_URL` and `PAYOS_CANCEL_URL`. Missing values stop startup. These profiles require Secure cookies and turn off SQL logging by default.
+
+CORS values must be exact HTTPS origins without paths or trailing slashes; payOS callback URLs must also use HTTPS. Set the frontend's server-only `BACKEND_API_URL=https://<backend-host>/api/v1` before building.
+
+After deployment, verify login, reload, refresh and logout on the HTTPS domain. Automated tests do not verify hosting TLS or proxy cookie forwarding.
 
 ## 6. High-level booking workflow
 
@@ -241,8 +261,6 @@ The critical handoff is from a pending reservation to backend-confirmed issuance
 
 ## 7. Architecture decisions and trade-offs
 
-These decisions describe the current implementation and its rationale; they are not claims that historical ADRs exist.
-
 | Decision | Benefit for this project | Cost or boundary |
 | --- | --- | --- |
 | Modular monolith | One backend codebase and local transactions keep reservation consistency manageable. | Shared persistence and direct cross-module access limit isolation and independent releases. |
@@ -252,5 +270,3 @@ These decisions describe the current implementation and its rationale; they are 
 | Separate payment intent and provider call | Slow external HTTP does not hold the preparation transaction open. | Partial initialization is a valid intermediate condition requiring reuse/reconciliation. |
 | Same-origin frontend proxy | A consistent browser API path supports cookie-based refresh. | Adds a forwarding boundary whose configuration and cookie behavior need integration testing. |
 | In-process asynchronous work | Simple follow-up processing without operating a message broker. | No durable delivery, replay or retry guarantee for notifications/provider follow-up. |
-
-The [backend tests](../backend/src/test/java/com/thanh/backend/) exercise selected consistency scenarios. Existing [browser smoke](../frontend/e2e/booking.spec.ts) mocks APIs; deployed proxy/cookie behavior and real payOS integration require separate verification.

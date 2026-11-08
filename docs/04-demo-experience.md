@@ -18,7 +18,7 @@ DEMO_ACCOUNTS_ENABLED=true
 DEMO_ACCOUNT_PASSWORD=<unique random secret of at least 16 characters>
 ```
 
-Set these variables on the backend, then start the application as described in README. Keep the demo password in environment configuration rather than in source code.
+Set these variables on the backend, then start the application as described in README. Keep the demo password in environment configuration rather than in source code. On HTTPS hosting, also set `COOKIE_SECURE=true` on the backend.
 
 Flight data must already be available; enabling demo payment does not create flights.
 

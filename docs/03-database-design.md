@@ -45,7 +45,7 @@ Booking totals/contact details, ticket fares and purchased add-on descriptions/p
 
 ## 3. Entity relationship diagrams
 
-The diagrams use actual table names and selected physical foreign keys. `||` means one parent, `|o` an optional parent and `o{` zero or many children. Dashed lines represent non-identifying FKs, not application-only relationships. Supporting/secondary links are omitted to keep the diagrams readable.
+The diagrams show selected physical foreign keys. `||` means one parent, `|o` an optional parent and `o{` zero or many children. Dashed lines represent non-identifying relationships.
 
 ### 3.1 Relationship overview
 
@@ -127,7 +127,7 @@ erDiagram
 
 ### 3.3 Payment and notifications
 
-Payments and notifications each belong to a booking. The repeated booking box supplies context; it does not represent another table.
+Payments and notifications each belong to a booking.
 
 Payments support the `DEMO` provider alongside existing provider values.
 
@@ -166,9 +166,9 @@ erDiagram
 - **Valid references:** foreign keys link reservations, legs, passengers, tickets, inventory and payments; CHECK constraints restrict supported categorical values.
 - **Unique identities:** booking PNR and payment order/transaction references have uniqueness protection. Seat labels are unique within a flight, and flight number/departure pairs identify distinct occurrences.
 - **One pending payment:** a partial unique index permits at most one `PENDING` payment per booking while retaining historical attempts.
-- **Complete reservations:** transactions save or roll back the related booking graph and seat claims together. Independent FKs alone do not prove that a ticket's booking, leg and seat form the same valid journey.
-- **Safe allocation:** conditional seat updates, ownership/expiry checks and Redis lease validation work together. Seat-label uniqueness alone does not prevent every conflicting allocation.
+- **Complete reservations:** transactions save or roll back the related booking graph and seat claims together.
+- **Safe allocation:** conditional seat updates, ownership/expiry checks and Redis lease validation work together.
 
 Indexes support route/date search, seat-status lookup, personal history and overdue-booking selection. Exact constraints and index definitions are in the [Flyway migrations](../backend/src/main/resources/db/migration/). Future schema changes should use a new migration rather than editing applied scripts.
 
-See [System Architecture](02-system-architecture.md) for PostgreSQL–Redis coordination and the [backend integration tests](../backend/src/test/java/com/thanh/backend/) for selected integrity scenarios. This design describes the migration-defined schema, not an inspection of a deployed database.
+See [System Architecture](02-system-architecture.md) for PostgreSQL–Redis coordination and the [backend integration tests](../backend/src/test/java/com/thanh/backend/) for selected integrity scenarios.
