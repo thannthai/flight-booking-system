@@ -18,13 +18,35 @@ The main architectural goals are:
 
 Shared persistence supports local transactions, but couples core modules to the same runtime and release boundary.
 
-## 2. Overall system architecture
+## 2. System architecture
+
+The diagrams follow the [C4 model](https://c4model.com): level 1 shows the system in its environment, level 2 the deployable containers, and level 3 (section 3) the backend modules. Class-level detail is left to the source.
+
+### 2.1 Level 1: System context
+
+```mermaid
+flowchart LR
+    Customer(["Customer<br/>Searches, books and pays"])
+    Admin(["Administrator<br/>Maintains catalog and inventory"])
+    System["Flight Booking System<br/>Search, seat holds, bookings, payments"]
+    PayOS["payOS<br/>Payment provider"]
+    OpenFreeMap["OpenFreeMap<br/>Map style and tiles"]
+
+    Customer -->|Uses in a browser| System
+    Admin -->|Uses admin APIs| System
+    System -->|Creates, queries and cancels payment links| PayOS
+    PayOS -->|Sends signed payment webhooks| System
+    Customer -->|Optional hosted checkout| PayOS
+    Customer -->|Loads map style and tiles| OpenFreeMap
+```
+
+### 2.2 Level 2: Containers
 
 ```mermaid
 flowchart LR
     Browser["Customer / browser"]
     Next["Next.js frontend<br/>App Router and API proxy"]
-    Backend["Spring Boot backend<br/>REST APIs and business logic"]
+    Backend["Spring Boot backend (Java 21)<br/>REST APIs and business logic"]
     PG[(PostgreSQL)]
     Redis[(Redis)]
     PayOS["payOS"]
@@ -63,7 +85,7 @@ The browser does not access PostgreSQL or Redis. It can open payOS checkout, but
 | `notification` | Notification entities, status/type definitions and persistence. |
 | `common` | API/page envelopes, error handling, shared entity metadata, JPA timestamp auditing, cookie utilities and production environment validation. |
 
-### 3.2 Important dependencies
+### 3.2 Level 3: Module components and dependencies
 
 ```mermaid
 %%{init: {"flowchart": {"curve": "linear", "nodeSpacing": 40, "rankSpacing": 60, "padding": 20, "subGraphTitleMargin": {"top": 12, "bottom": 30}}}}%%
@@ -79,13 +101,18 @@ flowchart TB
         Catalog["Catalog support<br/>airport · aircraft · airline"]
         Common["common<br/>Shared infrastructure"]
 
-        Booking -->|cancel payment| Payment
-        Payment -->|booking updates| Booking
-        Booking -->|flight/seat access| Flight
+        Booking -->|cancel payment, payment provider| Payment
+        Payment -->|booking and ticket updates| Booking
+        Booking -->|flight and seat access| Flight
         Payment -->|seat release| Flight
         Booking -->|user context| Auth
-        Payment -->|records| Notification
+        Payment -->|user context| Auth
+        Booking -->|airport and airline via flights| Catalog
+        Payment -->|notification records| Notification
+        Notification -->|booking and user references| Booking
+        Flight -->|seat holder reference| Auth
         Flight --> Catalog
+        Catalog -->|deletion checks| Flight
         %% Layout only: shared infrastructure sits beside catalog support.
         Flight ~~~ Common
     end
@@ -96,7 +123,9 @@ flowchart TB
     class Auth,Notification,Catalog,Common support
 ```
 
-Arrows show source-level dependencies. Catalog support groups `airport`, `aircraft` and `airline` for readability.
+Arrows show source-level dependencies; every module may also use `common`, and `auth` depends on nothing else. Catalog support groups `airport`, `aircraft` and `airline` for readability (`aircraft` also uses `airline`).
+
+This graph is enforced: [`ArchitectureTest`](../backend/src/test/java/com/thanh/backend/ArchitectureTest.java) fails when a module gains a dependency that is not listed, including the existing booking/payment and flight/catalog cycles.
 
 Booking cancellation accesses payment persistence and the gateway. Payment confirmation/cancellation accesses booking, ticket and seat persistence. Flight services read catalog repositories, and catalog deletion checks flight references. These shared entities and repositories simplify transactions but would need separation before extracting independent services.
 
@@ -255,11 +284,13 @@ sequenceDiagram
     FE-->>User: Display confirmation and e-tickets
 ```
 
-The critical handoff is from a pending reservation to backend-confirmed issuance. The initial booking already owns its allocated seats but does not yet have issued tickets. A valid webhook changes that state; polling exposes the committed result to the customer. Cancellation/expiry and refund-review branches are defined in the specification rather than expanded into this success-path diagram.
+The critical handoff is from a pending reservation to backend-confirmed issuance. The initial booking already owns its allocated seats but does not yet have issued tickets. A valid webhook changes that state; polling exposes the committed result to the customer. Cancellation/expiry and refund-review branches are defined in the specification rather than expanded into this success-path diagram. [Critical Flows](05-critical-flows.md) details the hold, webhook and expiry sequences.
 
 **Sources:** [booking orchestration](../backend/src/main/java/com/thanh/backend/booking/service/BookingService.java), [payment orchestration](../backend/src/main/java/com/thanh/backend/payment/service/impl/PaymentServiceImpl.java), [frontend checkout composition](../frontend/app/page.tsx), [frontend payment recovery](../frontend/lib/payment.ts).
 
 ## 7. Architecture decisions and trade-offs
+
+The table summarizes the main choices; the [decision records](adr/README.md) give the context, consequences and evidence for the most important ones.
 
 | Decision | Benefit for this project | Cost or boundary |
 | --- | --- | --- |

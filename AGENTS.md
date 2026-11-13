@@ -15,7 +15,7 @@
 | `backend/src/main/resources/` | `application.yaml` configuration, `db/migration/` Flyway scripts, demo-flight templates. |
 | `frontend/` | Next.js App Router, React, TypeScript and Tailwind. `app/` routes/composition; `components/` domain UI/controllers; `lib/` API/auth coordination, workflow models and helpers; `types/api.ts` API DTOs; `tests/` Node/jsdom; `e2e/` Playwright. |
 | `.github/workflows/` | Separate backend and frontend verification. Deployment packaging: `backend/Dockerfile`, `frontend/vercel.json`; local services: `docker-compose.yml`. |
-| `docs/` | Project specification, system architecture and database design. Verify contracts and business rules against controllers, DTOs, enums and migrations. |
+| `docs/` | Project specification, system architecture (C4 levels 1–3), database design, critical flows and `adr/` decision records. Verify contracts and business rules against controllers, DTOs, enums and migrations. |
 
 Use `backend/pom.xml` and `frontend/package.json` for actual versions. Read relevant installed Next.js docs in `frontend/node_modules/next/dist/docs/` before frontend changes. `frontend/AGENTS.md` is maintained by Next.js.
 

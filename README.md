@@ -164,3 +164,5 @@ isolated services; browser tests mock APIs.
 - [System Architecture](docs/02-system-architecture.md) — module boundaries, integrations and design decisions.
 - [Database Design](docs/03-database-design.md) — tables, relationships and integrity protections.
 - [Run and Try the Demo](docs/04-demo-experience.md) — backend setup and the shared-account visitor flow.
+- [Critical Flows](docs/05-critical-flows.md) — seat hold and booking, payment webhook, and booking expiry sequences.
+- [Architecture Decisions](docs/adr/README.md) — short records of the main design choices and their trade-offs.
