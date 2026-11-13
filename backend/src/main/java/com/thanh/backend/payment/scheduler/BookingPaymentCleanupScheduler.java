@@ -6,8 +6,6 @@ import com.thanh.backend.booking.enums.BookingStatus;
 import com.thanh.backend.booking.enums.TicketStatus;
 import com.thanh.backend.booking.repository.BookingRepository;
 import com.thanh.backend.booking.repository.TicketRepository;
-import com.thanh.backend.flight.entity.FlightSeat;
-import com.thanh.backend.flight.enums.SeatStatus;
 import com.thanh.backend.flight.repository.FlightSeatRepository;
 import com.thanh.backend.payment.entity.Payment;
 import com.thanh.backend.payment.enums.PaymentStatus;
@@ -102,16 +100,13 @@ public class BookingPaymentCleanupScheduler {
             // Giải phóng vé và ghế
             List<Ticket> tickets = ticketRepository.findByBookingId(bookingId);
             for (Ticket ticket : tickets) {
+                // Conditional release (same as user cancellation): never frees a seat that
+                // another active booking owns. Must run before the ticket leaves PENDING.
+                if (ticket.getStatus() == TicketStatus.PENDING && ticket.getFlightSeat() != null) {
+                    flightSeatRepository.releaseBookedSeatForCancellation(ticket.getFlightSeat().getId(), bookingId);
+                }
                 ticket.setStatus(TicketStatus.CANCELLED);
                 ticketRepository.save(ticket);
-
-                if (ticket.getFlightSeat() != null) {
-                    FlightSeat seat = ticket.getFlightSeat();
-                    seat.setStatus(SeatStatus.AVAILABLE);
-                    seat.setHeldUntil(null);
-                    seat.setHeldByUser(null);
-                    flightSeatRepository.save(seat);
-                }
             }
 
             log.info("Successfully expired and cancelled booking id: {}, released {} ticket/seat(s)",

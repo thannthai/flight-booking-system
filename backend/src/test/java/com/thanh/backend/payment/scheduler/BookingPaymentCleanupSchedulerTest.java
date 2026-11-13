@@ -35,10 +35,10 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -133,11 +133,10 @@ class BookingPaymentCleanupSchedulerTest {
         assertEquals("Payment timeout (deadline exceeded)", testBooking.getCancelReason());
         assertEquals(PaymentStatus.EXPIRED, testPayment.getStatus());
         assertEquals(TicketStatus.CANCELLED, testTicket.getStatus());
-        assertEquals(SeatStatus.AVAILABLE, testSeat.getStatus());
-        assertNull(testSeat.getHeldUntil());
-        assertNull(testSeat.getHeldByUser());
 
-        verify(flightSeatRepository).save(testSeat);
+        // Seats are released only through the conditional, booking-scoped update.
+        verify(flightSeatRepository).releaseBookedSeatForCancellation(88L, 1L);
+        verify(flightSeatRepository, never()).save(any(FlightSeat.class));
         verify(payOSGatewayService).cancelPaymentLinkAsync(eq(1000000002L), eq("Booking payment timeout"));
     }
 }
