@@ -1,5 +1,6 @@
 package com.thanh.backend.booking.dto.request;
 
+import jakarta.validation.constraints.Size;
 import com.thanh.backend.booking.enums.DocumentType;
 import com.thanh.backend.booking.enums.Gender;
 import com.thanh.backend.booking.enums.PassengerType;
@@ -21,6 +22,7 @@ import java.time.LocalDate;
 public class PassengerRequest {
 
     @NotBlank(message = "Passenger full name is required")
+    @Size(max = 255, message = "Passenger full name is too long")
     private String fullName;
 
     @NotNull(message = "Date of birth is required")
@@ -29,6 +31,7 @@ public class PassengerRequest {
     @NotNull(message = "Gender is required")
     private Gender gender;
 
+    @Size(max = 100, message = "Nationality is too long")
     private String nationality;
 
     @NotNull(message = "Passenger type is required")
@@ -37,6 +40,7 @@ public class PassengerRequest {
     private Integer guardianPassengerIndex;
 
     private DocumentType identityType;
+    @Size(max = 50, message = "Identity number is too long")
     private String identityNumber;
     private LocalDate identityExpiry;
 }

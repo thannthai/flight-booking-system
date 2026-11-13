@@ -1,5 +1,7 @@
 package com.thanh.backend.booking.dto.request;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -25,5 +27,7 @@ public class SeatSelectionRequest {
     @NotNull(message = "Passenger index is required")
     private Integer passengerIndex;
 
+    @Valid
+    @Size(max = 10, message = "At most 10 add-ons per seat")
     private List<AddOnRequest> addOns;
 }
