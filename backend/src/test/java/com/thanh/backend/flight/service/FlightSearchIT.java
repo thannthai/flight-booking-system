@@ -40,4 +40,25 @@ class FlightSearchIT extends AbstractIntegrationTest {
                 () -> jdbcTemplate.update("UPDATE flights SET source='CRAWLER' WHERE flight_no='TZ2'"));
         assertEquals("MANUAL", jdbcTemplate.queryForObject("SELECT source FROM flights WHERE flight_no='TZ2'",String.class));
     }
+
+    @Test void searchWorksWhenOriginOrDestinationIsOmitted() {
+        Long airline=jdbcTemplate.queryForObject("INSERT INTO airlines(code,name) VALUES ('OM','Optional') RETURNING id",Long.class);
+        Long aircraft=jdbcTemplate.queryForObject("INSERT INTO aircrafts(airline_code_id,model,total_seats,economy_seats,registration_no) VALUES (?,'Demo',180,180,'OM-01') RETURNING id",Long.class,airline);
+        for(String code:new String[]{"SGN","SIN","HAN","ICN"})
+            jdbcTemplate.update("INSERT INTO airports(iata_code,name,city,country,timezone) VALUES (?,?,?,'Demo','UTC') ON CONFLICT(iata_code) DO NOTHING",code,code,code);
+        String[][] routes={{"OM1","SGN","SIN"},{"OM2","HAN","ICN"}};
+        for(String[] route:routes) jdbcTemplate.update("""
+                INSERT INTO flights(flight_no,airline_code_id,aircraft_id,origin_iata_id,dest_iata_id,
+                departure_time,arrival_time,base_price,source) VALUES (?,?,?,(SELECT id FROM airports WHERE iata_code=?),(SELECT id FROM airports WHERE iata_code=?),
+                now()+interval '2 days',now()+interval '2 days 2 hours',100000,'MANUAL')
+                """,route[0],airline,aircraft,route[1],route[2]);
+        var page=PageRequest.of(0,10);
+        assertEquals(2,service.searchFlights(null,null,null,FlightStatus.SCHEDULED,page,true).getTotalElements());
+        assertEquals(2,service.searchFlights("  ","",null,FlightStatus.SCHEDULED,page,true).getTotalElements());
+        assertEquals("OM1",service.searchFlights("sgn",null,null,FlightStatus.SCHEDULED,page,true).getContent().getFirst().getFlightNo());
+        assertEquals("OM2",service.searchFlights(null,"ICN",null,FlightStatus.SCHEDULED,page,true).getContent().getFirst().getFlightNo());
+        // Page smaller than the result set forces the separate count query to run with null filters too.
+        assertEquals(2,service.searchFlights(null,null,null,FlightStatus.SCHEDULED,PageRequest.of(0,1),true).getTotalElements());
+        assertEquals(0,service.searchFlights("SGN","ICN",null,FlightStatus.SCHEDULED,page,true).getTotalElements());
+    }
 }

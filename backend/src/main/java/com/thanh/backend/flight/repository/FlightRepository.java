@@ -31,8 +31,8 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
             JOIN FETCH f.aircraft
             JOIN FETCH f.origin
             JOIN FETCH f.dest
-            WHERE (:origin IS NULL OR FUNCTION('unaccent', LOWER(f.origin.iataCode)) = FUNCTION('unaccent', LOWER(:origin)) OR FUNCTION('unaccent', LOWER(f.origin.city)) = FUNCTION('unaccent', LOWER(:origin)))
-              AND (:destination IS NULL OR FUNCTION('unaccent', LOWER(f.dest.iataCode)) = FUNCTION('unaccent', LOWER(:destination)) OR FUNCTION('unaccent', LOWER(f.dest.city)) = FUNCTION('unaccent', LOWER(:destination)))
+            WHERE (:origin IS NULL OR FUNCTION('unaccent', LOWER(f.origin.iataCode)) = FUNCTION('unaccent', LOWER(cast(:origin as string))) OR FUNCTION('unaccent', LOWER(f.origin.city)) = FUNCTION('unaccent', LOWER(cast(:origin as string))))
+              AND (:destination IS NULL OR FUNCTION('unaccent', LOWER(f.dest.iataCode)) = FUNCTION('unaccent', LOWER(cast(:destination as string))) OR FUNCTION('unaccent', LOWER(f.dest.city)) = FUNCTION('unaccent', LOWER(cast(:destination as string))))
               AND (cast(:startOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime >= :startOfDay)
               AND (cast(:endOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime <= :endOfDay)
               AND (:status IS NULL OR f.status = :status)
@@ -40,8 +40,8 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
             """,
             countQuery = """
             SELECT COUNT(f) FROM Flight f
-            WHERE (:origin IS NULL OR FUNCTION('unaccent', LOWER(f.origin.iataCode)) = FUNCTION('unaccent', LOWER(:origin)) OR FUNCTION('unaccent', LOWER(f.origin.city)) = FUNCTION('unaccent', LOWER(:origin)))
-              AND (:destination IS NULL OR FUNCTION('unaccent', LOWER(f.dest.iataCode)) = FUNCTION('unaccent', LOWER(:destination)) OR FUNCTION('unaccent', LOWER(f.dest.city)) = FUNCTION('unaccent', LOWER(:destination)))
+            WHERE (:origin IS NULL OR FUNCTION('unaccent', LOWER(f.origin.iataCode)) = FUNCTION('unaccent', LOWER(cast(:origin as string))) OR FUNCTION('unaccent', LOWER(f.origin.city)) = FUNCTION('unaccent', LOWER(cast(:origin as string))))
+              AND (:destination IS NULL OR FUNCTION('unaccent', LOWER(f.dest.iataCode)) = FUNCTION('unaccent', LOWER(cast(:destination as string))) OR FUNCTION('unaccent', LOWER(f.dest.city)) = FUNCTION('unaccent', LOWER(cast(:destination as string))))
               AND (cast(:startOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime >= :startOfDay)
               AND (cast(:endOfDay as java.time.OffsetDateTime) IS NULL OR f.departureTime <= :endOfDay)
               AND (:status IS NULL OR f.status = :status)
