@@ -39,6 +39,8 @@ Backend commands run from `backend/`, with JDK 21:
 
 Integration tests extend `AbstractIntegrationTest` and start PostgreSQL/Redis Testcontainers; Docker must be available. For locks, Redis leases, rollback and concurrency, use real services, independent transactions, bounded coordination and persisted-state assertions. Mock interactions alone do not prove concurrency. The Dockerfile skips tests; building the image is not verification.
 
+`./mvnw clean verify` also runs a JaCoCo coverage gate (unit + IT combined): `booking.service` and `payment.service.impl` packages and the whole backend must stay above the thresholds in `pom.xml`. Rule `includes` use dotted package names. Raise thresholds as tests grow; never lower them to pass. `.github/workflows/secret-scan.yml` runs gitleaks over the full history.
+
 `ArchitectureTest` (ArchUnit, plain unit test) locks the module dependency graph and layer rules. It permits only today's module edges, including the known booking/payment and flight/reference-data cycles; a new cross-module dependency fails it, so justify the edge and update the allowed map deliberately rather than loosening a rule.
 
 Frontend commands run from `frontend/`. Use Node 24 as in frontend CI, pnpm pinned by `packageManager`, and only `pnpm-lock.yaml`:
