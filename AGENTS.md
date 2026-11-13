@@ -39,6 +39,8 @@ Backend commands run from `backend/`, with JDK 21:
 
 Integration tests extend `AbstractIntegrationTest` and start PostgreSQL/Redis Testcontainers; Docker must be available. For locks, Redis leases, rollback and concurrency, use real services, independent transactions, bounded coordination and persisted-state assertions. Mock interactions alone do not prove concurrency. The Dockerfile skips tests; building the image is not verification.
 
+`ArchitectureTest` (ArchUnit, plain unit test) locks the module dependency graph and layer rules. It permits only today's module edges, including the known booking/payment and flight/reference-data cycles; a new cross-module dependency fails it, so justify the edge and update the allowed map deliberately rather than loosening a rule.
+
 Frontend commands run from `frontend/`. Use Node 24 as in frontend CI, pnpm pinned by `packageManager`, and only `pnpm-lock.yaml`:
 
 ```sh
@@ -58,7 +60,7 @@ pnpm test:e2e
 
 ## Configuration, migrations and handoff
 
-- Add versioned Flyway migrations in `backend/src/main/resources/db/migration/`; do not edit applied migrations or reset schema history to bypass failures. Preserve constraints/data compatibility and JPA `ddl-auto=validate`.
+- Add versioned Flyway migrations in `backend/src/main/resources/db/migration/`; do not edit applied migrations or reset schema history to bypass failures. Preserve constraints/data compatibility and JPA `ddl-auto=validate`. `MigrationUpgradeIT` upgrades a database seeded at V10 to the latest schema; when adding a migration, extend it to cover the new constraints and any data backfill.
 - Backend environment keys come from `application.yaml`; do not assume `.env` is loaded automatically. Frontend template: `frontend/environment.example` → ignored `.env.local`. Browser calls `/api/v1`; server-only `BACKEND_API_URL` ends in `/api/v1` and requires HTTPS in production. Check cookie/CORS/callback configuration before deployment; repository config does not prove hosting settings.
 - Never commit/log credentials, tokens, private keys, real payment details or sensitive passenger data. Keep `.env*`, `backend/target/`, `node_modules/`, `.next/`, `next-env.d.ts`, `*.tsbuildinfo` and browser artifacts ignored. Generate Next types rather than editing generated declarations.
 - For multi-session work, leave a concise local handoff with verified milestones, open issues and commands; keep transient progress/test counts out of this guide. Ask before destructive operations or production-data changes; commit/push/deploy only when requested.
