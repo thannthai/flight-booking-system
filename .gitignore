@@ -26,3 +26,6 @@ logs/
 /docs/api-plan.md
 /docs/testing/
 /docs/technical/
+/docs/05-auth-flow.md
+/.agents/
+/skills-lock.json
