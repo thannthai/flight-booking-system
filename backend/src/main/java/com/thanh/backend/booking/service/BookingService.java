@@ -41,6 +41,7 @@ import com.thanh.backend.flight.enums.FlightStatus;
 import com.thanh.backend.flight.enums.SeatStatus;
 import com.thanh.backend.flight.repository.FlightRepository;
 import com.thanh.backend.flight.repository.FlightSeatRepository;
+import com.thanh.backend.payment.entity.Payment;
 import com.thanh.backend.payment.repository.PaymentRepository;
 import com.thanh.backend.payment.service.PayOSGatewayService;
 import com.thanh.backend.payment.enums.PaymentStatus;
@@ -53,6 +54,7 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -834,13 +836,7 @@ public class BookingService {
             throw new AppException(ErrorCode.UNAUTHORIZED_BOOKING_ACCESS);
         }
 
-        List<Ticket> tickets = ticketRepository.findByBookingId(bookingId);
-        List<Passenger> passengers = tickets.stream()
-                .map(Ticket::getPassenger)
-                .distinct()
-                .toList();
-
-        return buildBookingResponse(booking, passengers, tickets);
+        return buildBookingResponses(List.of(booking)).getFirst();
     }
 
     /**
@@ -848,32 +844,63 @@ public class BookingService {
      */
     @Transactional(readOnly = true)
     public Page<BookingResponse> getMyBookings(User user, Pageable pageable) {
-        return bookingRepository.findByUserId(user.getId(), pageable)
-                .map(booking -> {
-                    List<Ticket> tickets = ticketRepository.findByBookingId(booking.getId());
-                    List<Passenger> passengers = tickets.stream()
-                            .map(Ticket::getPassenger)
-                            .distinct()
-                            .toList();
-                    return buildBookingResponse(booking, passengers, tickets);
-                });
+        Page<Booking> page = bookingRepository.findByUserId(user.getId(), pageable);
+        List<BookingResponse> responses = buildBookingResponses(page.getContent());
+        return new PageImpl<>(responses, pageable, page.getTotalElements());
+    }
+
+    /**
+     * Lắp ráp response cho nhiều booking bằng số query cố định (tickets, add-ons, payments),
+     * không phụ thuộc số booking trong trang.
+     */
+    private List<BookingResponse> buildBookingResponses(List<Booking> bookings) {
+        if (bookings.isEmpty()) {
+            return List.of();
+        }
+        List<Long> bookingIds = bookings.stream().map(Booking::getId).toList();
+        Map<Long, List<Ticket>> ticketsByBooking = ticketRepository.findDetailedByBookingIdIn(bookingIds).stream()
+                .collect(java.util.stream.Collectors.groupingBy(ticket -> ticket.getBooking().getId()));
+
+        List<Long> ticketIds = ticketsByBooking.values().stream()
+                .flatMap(List::stream).map(Ticket::getId).toList();
+        Map<Long, List<AddOnService>> addOnsByTicketId = ticketIds.isEmpty()
+                ? Map.of()
+                : addOnServiceRepository.findByTicketIdIn(ticketIds).stream()
+                .collect(java.util.stream.Collectors.groupingBy(addOn -> addOn.getTicket().getId()));
+
+        // Newest first: keep the first payment seen for each booking.
+        Map<Long, String> providerByBooking = new HashMap<>();
+        for (Payment payment : paymentRepository.findByBookingIdInOrderByCreatedAtDescIdDesc(bookingIds)) {
+            providerByBooking.putIfAbsent(payment.getBooking().getId(), payment.getProvider());
+        }
+
+        return bookings.stream().map(booking -> {
+            List<Ticket> tickets = ticketsByBooking.getOrDefault(booking.getId(), List.of());
+            List<Passenger> passengers = tickets.stream().map(Ticket::getPassenger).distinct().toList();
+            return assembleBookingResponse(booking, passengers, tickets, addOnsByTicketId,
+                    providerByBooking.get(booking.getId()));
+        }).toList();
     }
 
     /**
      * Helper lắp ráp BookingResponse DTO chi tiết sử dụng BookingMapper (MapStruct).
      */
     private BookingResponse buildBookingResponse(Booking booking, List<Passenger> passengers, List<Ticket> tickets) {
+        List<Long> ticketIds = tickets.stream().map(Ticket::getId).toList();
+        Map<Long, List<AddOnService>> addOnsByTicketId = ticketIds.isEmpty()
+                ? Map.of()
+                : addOnServiceRepository.findByTicketIdIn(ticketIds).stream()
+                .collect(java.util.stream.Collectors.groupingBy(a -> a.getTicket().getId()));
+        String provider = paymentRepository.findTopByBookingIdOrderByCreatedAtDesc(booking.getId())
+                .map(Payment::getProvider).orElse(null);
+        return assembleBookingResponse(booking, passengers, tickets, addOnsByTicketId, provider);
+    }
+
+    private BookingResponse assembleBookingResponse(Booking booking, List<Passenger> passengers, List<Ticket> tickets,
+                                                    Map<Long, List<AddOnService>> addOnsByTicketId, String paymentProvider) {
         List<PassengerResponse> passengerResponses = passengers.stream()
                 .map(bookingMapper::toPassengerResponse)
                 .toList();
-
-        List<Long> ticketIds = tickets.stream().map(Ticket::getId).toList();
-        List<AddOnService> allAddOns = ticketIds.isEmpty()
-                ? List.of()
-                : addOnServiceRepository.findByTicketIdIn(ticketIds);
-
-        Map<Long, List<AddOnService>> addOnsByTicketId = allAddOns.stream()
-                .collect(java.util.stream.Collectors.groupingBy(a -> a.getTicket().getId()));
 
         List<TicketResponse> ticketResponses = tickets.stream().map(ticket -> {
             List<AddOnResponse> addOns = addOnsByTicketId.getOrDefault(ticket.getId(), List.of()).stream()
@@ -884,8 +911,9 @@ public class BookingService {
         }).toList();
 
         BookingResponse response = bookingMapper.toResponse(booking, passengerResponses, ticketResponses);
-        paymentRepository.findTopByBookingIdOrderByCreatedAtDesc(booking.getId())
-                .ifPresent(payment -> response.setPaymentProvider(payment.getProvider()));
+        if (paymentProvider != null) {
+            response.setPaymentProvider(paymentProvider);
+        }
         return response;
     }
 

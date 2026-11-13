@@ -11,6 +11,8 @@ import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
+import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -26,6 +28,9 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     Optional<Payment> findByBookingIdAndStatus(@Param("bookingId") Long bookingId, @Param("status") PaymentStatus status);
 
     Optional<Payment> findTopByBookingIdOrderByCreatedAtDesc(Long bookingId);
+
+    /** Newest first; callers take the first row per booking. */
+    List<Payment> findByBookingIdInOrderByCreatedAtDescIdDesc(Collection<Long> bookingIds);
 
     @Query(value = "SELECT nextval('payment_order_code_seq')", nativeQuery = true)
     Long getNextOrderCode();

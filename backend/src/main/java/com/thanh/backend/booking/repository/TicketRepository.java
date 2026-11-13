@@ -15,6 +15,23 @@ public interface TicketRepository extends JpaRepository<Ticket, Long> {
     List<Ticket> findByBookingId(Long bookingId);
     boolean existsByPassengerId(Long passengerId);
 
+    /** Read-only response path: loads everything BookingMapper touches in one statement. */
+    @Query("""
+        SELECT t FROM Ticket t
+        JOIN FETCH t.bookingLeg bl
+        JOIN FETCH bl.flight f
+        JOIN FETCH f.airline
+        JOIN FETCH f.aircraft
+        JOIN FETCH f.origin
+        JOIN FETCH f.dest
+        JOIN FETCH t.passenger p
+        LEFT JOIN FETCH p.guardian
+        LEFT JOIN FETCH t.flightSeat
+        WHERE t.booking.id IN :bookingIds
+        ORDER BY t.id
+    """)
+    List<Ticket> findDetailedByBookingIdIn(@Param("bookingIds") List<Long> bookingIds);
+
     @Query("""
         SELECT COUNT(t) > 0
         FROM Ticket t

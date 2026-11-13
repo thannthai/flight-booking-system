@@ -38,6 +38,9 @@ spring:
     baseline-on-migrate: true
 
   data:
+    web:
+      pageable:
+        max-page-size: 100
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
