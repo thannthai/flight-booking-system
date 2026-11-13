@@ -103,6 +103,13 @@ spring:
 cookie:
   secure: ${COOKIE_SECURE:true}
 
+# Public API documentation is off in production unless explicitly enabled.
+springdoc:
+  api-docs:
+    enabled: ${SWAGGER_ENABLED:false}
+  swagger-ui:
+    enabled: ${SWAGGER_ENABLED:false}
+
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS}
 

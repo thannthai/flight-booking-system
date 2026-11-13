@@ -192,7 +192,7 @@ The [production environment validator](../backend/src/main/java/com/thanh/backen
 
 For the portfolio on Render + Vercel, keep the backend's `demo`/`dev` Spring profile when using Try demo. Set `COOKIE_SECURE=true` on the HTTPS-hosted backend. Vercel's Production environment does not select the backend Spring profile.
 
-For a non-demo backend, activate `prod` or `production` and supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `CORS_ALLOWED_ORIGINS`, `PAYOS_RETURN_URL` and `PAYOS_CANCEL_URL`. Missing values stop startup. These profiles require Secure cookies and turn off SQL logging by default.
+For a non-demo backend, activate `prod` or `production` and supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `CORS_ALLOWED_ORIGINS`, `PAYOS_RETURN_URL` and `PAYOS_CANCEL_URL`. Missing values stop startup. These profiles require Secure cookies and turn off SQL logging and the Swagger UI/OpenAPI endpoints by default; set `SWAGGER_ENABLED=true` only if public API documentation is intended.
 
 CORS values must be exact HTTPS origins without paths or trailing slashes; payOS callback URLs must also use HTTPS. Set the frontend's server-only `BACKEND_API_URL=https://<backend-host>/api/v1` before building.
 

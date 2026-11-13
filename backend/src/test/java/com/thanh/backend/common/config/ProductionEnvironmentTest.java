@@ -108,6 +108,28 @@ class ProductionEnvironmentTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"prod", "production"})
+    void productionDisablesApiDocsUnlessExplicitlyEnabled(String profile) {
+        runner(valid(profile)).run(context -> {
+            assertThat(context.getEnvironment().getProperty("springdoc.api-docs.enabled", Boolean.class)).isFalse();
+            assertThat(context.getEnvironment().getProperty("springdoc.swagger-ui.enabled", Boolean.class)).isFalse();
+        });
+        var enabled = valid(profile);
+        enabled.put("SWAGGER_ENABLED", "true");
+        runner(enabled).run(context -> {
+            assertThat(context.getEnvironment().getProperty("springdoc.api-docs.enabled", Boolean.class)).isTrue();
+            assertThat(context.getEnvironment().getProperty("springdoc.swagger-ui.enabled", Boolean.class)).isTrue();
+        });
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"default", "dev", "demo", "test"})
+    void localProfilesKeepApiDocsAvailable(String profile) {
+        runner(Map.of("spring.profiles.active", profile)).run(context ->
+                assertThat(context.getEnvironment().getProperty("springdoc.api-docs.enabled", Boolean.class, true)).isTrue());
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"default", "dev", "demo", "test"})
     void localProfilesKeepHttpDevelopmentCookieWithoutProductionSecrets(String profile) {
         runner(Map.of("spring.profiles.active", profile)).run(context -> {
