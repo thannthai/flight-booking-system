@@ -36,7 +36,7 @@ class MigrationUpgradeIT {
 
     @BeforeAll
     static void migrateToV10AndSeedData() {
-        postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:15-alpine"));
+        postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17-alpine"));
         postgres.start();
         var dataSource = new DriverManagerDataSource(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         db = new JdbcTemplate(dataSource);

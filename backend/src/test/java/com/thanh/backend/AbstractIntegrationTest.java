@@ -32,7 +32,7 @@ public abstract class AbstractIntegrationTest {
     @Qualifier("seatHoldCleanupExecutor")
     protected ThreadPoolTaskExecutor seatHoldCleanupExecutor;
 
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:15-alpine"));
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17-alpine"));
     static final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 
