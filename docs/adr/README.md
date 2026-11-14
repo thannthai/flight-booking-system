@@ -9,5 +9,6 @@ Short records of the decisions that shape this system: the context, what was cho
 | [0003](0003-lock-order-and-no-locks-across-provider-calls.md) | Booking-then-payment lock order and no locks across provider calls | Accepted |
 | [0004](0004-backend-owned-payment-deadline-and-webhook-confirmation.md) | Backend-owned payment deadline and webhook-only confirmation | Accepted |
 | [0005](0005-refresh-cookie-via-same-origin-proxy.md) | Refresh cookie through a same-origin proxy with single-use rotation | Accepted |
+| [0006](0006-redis-rate-limiting.md) | Redis fixed-window rate limiting that fails open | Accepted |
 
 Each file records the decision as made and is not rewritten when the code changes. A reversed decision gets a new record that supersedes the old one.

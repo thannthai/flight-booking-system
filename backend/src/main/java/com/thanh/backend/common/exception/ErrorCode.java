@@ -15,6 +15,7 @@ public enum ErrorCode {
     REFRESH_TOKEN_INVALID(HttpStatus.UNAUTHORIZED, "Refresh token invalid or expired"),
     SEAT_NOT_AVAILABLE(HttpStatus.CONFLICT, "Seat is not available"),
     SEAT_HELD(HttpStatus.CONFLICT, "Seat is currently held by another user"),
+    RATE_LIMITED(HttpStatus.TOO_MANY_REQUESTS, "Too many requests, please try again later"),
     SEAT_HOLD_LIMIT_EXCEEDED(HttpStatus.CONFLICT, "Too many seats are held at once; complete or release a booking first"),
     INVALID_CONTACT_INFO(HttpStatus.BAD_REQUEST, "Contact info is invalid"),
     INVALID_INFANT_GUARDIAN(HttpStatus.BAD_REQUEST, "Infant guardian is invalid. Each infant must have a valid adult guardian with identity document"),

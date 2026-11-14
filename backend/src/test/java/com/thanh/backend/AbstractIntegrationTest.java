@@ -32,7 +32,9 @@ public abstract class AbstractIntegrationTest {
     @Qualifier("seatHoldCleanupExecutor")
     protected ThreadPoolTaskExecutor seatHoldCleanupExecutor;
 
-    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17-alpine"));
+    // Each cached Spring context keeps its own connection pool; the default 100 connections run out after ~10 contexts.
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>(DockerImageName.parse("postgres:17-alpine"))
+            .withCommand("postgres", "-c", "fsync=off", "-c", "max_connections=400");
     static final GenericContainer<?> redis = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 

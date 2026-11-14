@@ -29,7 +29,7 @@ Status describes the current implementation. Deployed provider integration requi
 
 | Area | Functionality | Status |
 | --- | --- | --- |
-| Authentication | Register, login, logout and restore sessions through refresh. | Implemented |
+| Authentication | Register, login, logout and restore sessions through refresh. Login, registration, refresh and seat holds are rate limited. | Implemented |
 | Flight search | Preview the selected route on a map; search routes/dates; filter by airline, maximum base fare and departure period; sort by price, departure or duration. | Implemented |
 | Journey selection | Choose one-way or round-trip flights and economy/business cabin. | Implemented |
 | Passenger details | Enter contact/traveler information, assign infant guardians and choose add-ons. | Implemented |

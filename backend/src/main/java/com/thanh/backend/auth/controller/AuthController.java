@@ -5,6 +5,8 @@ import com.thanh.backend.auth.dto.request.LoginRequest;
 import com.thanh.backend.auth.dto.request.RegisterRequest;
 import com.thanh.backend.auth.dto.response.AuthResponse;
 import com.thanh.backend.auth.service.AuthService;
+import com.thanh.backend.auth.service.LoginAttemptLimiter;
+import com.thanh.backend.common.ratelimit.ClientIpResolver;
 import com.thanh.backend.common.response.ApiResponse;
 import com.thanh.backend.common.utils.CookieUtils;
 import io.swagger.v3.oas.annotations.Operation;
@@ -15,6 +17,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.web.bind.annotation.CookieValue;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +33,8 @@ public class AuthController {
 
     private final AuthService authService;
     private final CookieUtils cookieUtils;
+    private final LoginAttemptLimiter loginAttempts;
+    private final ClientIpResolver clientIps;
 
     /** Thời gian hết hạn access token (ms) — dùng để trả về expiresIn (giây) trong response */
     @Value("${jwt.access-token-expiration}")
@@ -59,9 +64,19 @@ public class AuthController {
     @Operation(summary = "Login and obtain access token")
     public ApiResponse<AuthResponse> login(
             @Valid @RequestBody LoginRequest request,
+            HttpServletRequest httpRequest,
             HttpServletResponse response
     ) {
-        AuthTokens tokens = authService.login(request);
+        String failureKey = loginAttempts.keyFor(request.getEmail(), clientIps.resolve(httpRequest));
+        loginAttempts.requireNotBlocked(failureKey, response);
+        AuthTokens tokens;
+        try {
+            tokens = authService.login(request);
+        } catch (BadCredentialsException e) {
+            loginAttempts.recordFailure(failureKey);
+            throw e;
+        }
+        loginAttempts.clear(failureKey);
         cookieUtils.setRefreshCookie(response, tokens.refreshToken());
         return ApiResponse.success(buildAuthResponse(tokens));
     }

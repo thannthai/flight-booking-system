@@ -222,6 +222,8 @@ For the portfolio on Render + Vercel, keep the backend's `demo`/`dev` Spring pro
 
 For a non-demo backend, activate `prod` or `production` and supply `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `CORS_ALLOWED_ORIGINS`, `PAYOS_RETURN_URL` and `PAYOS_CANCEL_URL`. Missing values stop startup. These profiles require Secure cookies and turn off SQL logging and the Swagger UI/OpenAPI endpoints by default; set `SWAGGER_ENABLED=true` only if public API documentation is intended.
 
+Rate limiting needs the real client address. Behind a reverse proxy the backend only sees the proxy, so set `RATE_LIMIT_TRUSTED_PROXY_HOPS` to the number of trusted proxies in front of it (0 uses the socket address); otherwise every customer shares one counter and the login limit applies to the whole site. Check the `X-Forwarded-For` chain on the deployed domain before relying on it. `RATE_LIMIT_ENABLED=false` turns the limits off. See [decision 0006](adr/0006-redis-rate-limiting.md).
+
 CORS values must be exact HTTPS origins without paths or trailing slashes; payOS callback URLs must also use HTTPS. Set the frontend's server-only `BACKEND_API_URL=https://<backend-host>/api/v1` before building.
 
 After deployment, verify login, reload, refresh and logout on the HTTPS domain. Automated tests do not verify hosting TLS or proxy cookie forwarding.

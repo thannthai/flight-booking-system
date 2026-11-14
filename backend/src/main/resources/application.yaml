@@ -81,6 +81,19 @@ app:
   booking:
     hold-ttl-seconds: 900
     max-held-seats-per-user: 20
+  rate-limit:
+    enabled: ${RATE_LIMIT_ENABLED:true}
+    # Trusted reverse proxies in front of the backend (0 = use the socket address). Behind a proxy this MUST
+    # be set, or every customer shares one counter. Verify the X-Forwarded-For chain on the deployed domain.
+    trusted-proxy-hops: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:0}
+    login-failure-limit: 5
+    login-failure-window-seconds: 900
+    rules:
+      - { name: login, path: /api/v1/auth/login, limit: 10, window-seconds: 60 }
+      - { name: demo-login, path: /api/v1/demo/login/*, limit: 20, window-seconds: 60 }
+      - { name: register, path: /api/v1/auth/register, limit: 5, window-seconds: 3600 }
+      - { name: refresh, path: /api/v1/auth/refresh, limit: 30, window-seconds: 60 }
+      - { name: hold-seats, path: /api/v1/bookings/hold-seats, scope: USER, limit: 30, window-seconds: 60 }
 
 payos:
   client-id: ${PAYOS_CLIENT_ID}
