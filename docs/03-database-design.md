@@ -27,7 +27,7 @@ The schema contains **16 application tables**. Each uses a numeric `id` primary 
 | Tickets | `tickets` | Passenger entitlement for a booking leg and optional seat. |
 | Tickets | `add_on_services` | Purchased add-on descriptions, prices and quantities. |
 | Payment | `payments` | Payment intents, provider references and receipt/refund-review state. |
-| Notifications | `notifications` | Confirmation recipients and recorded outcomes. |
+| Notifications | `notifications` | Reserved for confirmation recipients and outcomes; no workflow writes it yet. |
 | Schema support | `vouchers` | Discount definitions; no implemented voucher workflow. |
 | Schema support | `audit_logs` | Administrative action records; no implemented audit-log workflow. |
 

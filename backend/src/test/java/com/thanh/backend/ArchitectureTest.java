@@ -37,7 +37,7 @@ class ArchitectureTest {
             "aircraft", Set.of("common", "flight", "airline"),
             "flight", Set.of("common", "auth", "airport", "airline", "aircraft"),
             "booking", Set.of("common", "auth", "flight", "airport", "airline", "payment"),
-            "payment", Set.of("common", "auth", "flight", "booking", "notification"),
+            "payment", Set.of("common", "auth", "flight", "booking"),
             "notification", Set.of("common", "auth", "booking")
     );
 

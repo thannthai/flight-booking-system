@@ -82,7 +82,7 @@ sequenceDiagram
         end
         API->>DB: Commit
         API-->>P: Acknowledge
-        API->>API: After commit, publish success event (async listener stores a notification)
+        API->>API: After commit, publish the success event (no listener is registered today)
     end
 ```
 

@@ -14,7 +14,6 @@ import com.thanh.backend.payment.repository.PaymentRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.aopalliance.intercept.MethodInterceptor;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -326,13 +325,6 @@ class WebhookIdempotencyIT extends AbstractIntegrationTest {
         }
         payments.processWebhookPayment(hook(payment));
         assertEquals(1, events.counts.get(booking.getId()));
-    }
-
-    @AfterEach
-    void awaitCommittedNotificationsBeforeFixtureCleanup() {
-        events.counts.forEach((bookingId, count) -> org.awaitility.Awaitility.await()
-                .atMost(Duration.ofSeconds(5)).untilAsserted(() -> assertEquals(count,
-                        db.queryForObject("SELECT count(*) FROM notifications WHERE booking_id=? AND type='BOOKING_CONFIRM'", Integer.class, bookingId))));
     }
 
     private Map<String, Object> snapshot(long paymentId) {

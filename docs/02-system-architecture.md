@@ -81,8 +81,8 @@ The browser does not access PostgreSQL or Redis. It can open payOS checkout, but
 | `aircraft` | Aircraft ownership, registrations and cabin capacity configuration. |
 | `flight` | Flight search/details, seat maps and initial seat inventory, flight administration and optional demo generation. |
 | `booking` | Seat holds, passenger directory, booking/leg/passenger/ticket records, pricing and pending-booking cancellation. |
-| `payment` | Payment intents, payOS adapter/configuration, verified webhook processing, cancellation coordination, payment-success events/listener and unpaid-booking timeout cleanup. |
-| `notification` | Notification entities, status/type definitions and persistence. |
+| `payment` | Payment intents, payOS adapter/configuration, verified webhook processing, cancellation coordination, the payment-success event and unpaid-booking timeout cleanup. |
+| `notification` | Notification entities, status/type definitions and persistence. No workflow writes them yet; booking confirmation is shown in the web app. |
 | `common` | API/page envelopes, error handling, shared entity metadata, JPA timestamp auditing, cookie utilities and production environment validation. |
 
 ### 3.2 Level 3: Module components and dependencies
@@ -108,7 +108,6 @@ flowchart TB
         Booking -->|user context| Auth
         Payment -->|user context| Auth
         Booking -->|airport and airline via flights| Catalog
-        Payment -->|notification records| Notification
         Notification -->|booking and user references| Booking
         Flight -->|seat holder reference| Auth
         Flight --> Catalog
@@ -141,7 +140,7 @@ Security filters authenticate protected requests before controller handling; ser
 
 ### 4.1 PostgreSQL and schema ownership
 
-PostgreSQL holds persistent business state: users, catalog/inventory, bookings and legs, passengers/documents, tickets/add-ons, payments and notification records. Booking/payment status returned to customers comes from these records, not browser state or provider redirect parameters.
+PostgreSQL holds persistent business state: users, catalog/inventory, bookings and legs, passengers/documents, tickets/add-ons, payments. Booking/payment status returned to customers comes from these records, not browser state or provider redirect parameters.
 
 Flyway owns versioned schema changes. The complete migration sequence matters: later migrations refine payment states, uniqueness and flight provenance. Hibernate validates entity/schema compatibility rather than generating the schema. Foreign keys and selected unique constraints complement service validation; they do not replace every business check.
 
@@ -203,7 +202,7 @@ The frontend renders the returned QR payload locally and periodically reads paym
 
 | Mechanism | Implemented interaction |
 | --- | --- |
-| Payment success event | Published in-process after the payment transaction commits. An asynchronous listener in `payment` reads booking data and stores a notification record. It does not send email. |
+| Payment success event | Published in-process after the payment transaction commits. No listener is registered today, so it sends no email or notification; customers see the confirmation in the web app. |
 | Provider link cancellation | Submitted through an asynchronous gateway method; it does not itself refund money. |
 | Unpaid-booking cleanup | A scheduled job in `payment` processes overdue pending bookings, updates local state/releases seats, then requests provider cancellation when applicable. |
 | Optional demo generation | A startup/scheduled process in `flight` generates simulated inventory through a transactional writer, subject to environment/target checks and inventory budgets. |
@@ -213,7 +212,7 @@ A fresh database seeds airports but no flight schedules. An existing `ROLE_ADMIN
 
 These events and jobs run inside Spring Boot. In-process asynchronous execution is not a durable message queue; follow-up delivery is best-effort and separate from the committed booking/payment outcome.
 
-**Sources:** [gateway adapter](../backend/src/main/java/com/thanh/backend/payment/service/impl/PayOSGatewayServiceImpl.java), [success listener](../backend/src/main/java/com/thanh/backend/payment/event/PaymentSuccessEventListener.java), [timeout job](../backend/src/main/java/com/thanh/backend/payment/scheduler/BookingPaymentCleanupScheduler.java), [demo generator](../backend/src/main/java/com/thanh/backend/flight/demo/DemoFlightGenerator.java).
+**Sources:** [gateway adapter](../backend/src/main/java/com/thanh/backend/payment/service/impl/PayOSGatewayServiceImpl.java), [success event](../backend/src/main/java/com/thanh/backend/payment/event/PaymentSuccessEvent.java), [timeout job](../backend/src/main/java/com/thanh/backend/payment/scheduler/BookingPaymentCleanupScheduler.java), [demo generator](../backend/src/main/java/com/thanh/backend/flight/demo/DemoFlightGenerator.java).
 
 ### 5.5 Deployment configuration boundary
 

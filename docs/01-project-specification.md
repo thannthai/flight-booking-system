@@ -40,7 +40,7 @@ Status describes the current implementation. Deployed provider integration requi
 | Passenger directory | Save, edit, quickfill and remove own passenger entries. Document-only removal is unsupported. | Implemented within this scope |
 | Demo | Try the booking flow through one shared account and simulated payment. | Implemented; enabled explicitly on demo/dev backends |
 | Administration | Maintain airports, airlines, aircraft and flights through APIs. | Implemented |
-| Notifications | Record booking confirmation; email delivery is not implemented. | Partially Implemented |
+| Notifications | Email and in-app notifications; confirmation is shown in the web app instead. | Planned; not implemented |
 | Voucher/refund workflows | Voucher validation, completed-booking cancellation approval and refund execution. | Planned; no complete workflow |
 
 ## 5. Main user flows

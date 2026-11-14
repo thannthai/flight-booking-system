@@ -25,7 +25,7 @@ Flights marked `DEMO` are simulated inventory. Printed e-tickets are demo bookin
 - **Authentication:** registration, login, refresh and logout with account-bound checkout cleanup.
 - **Administration APIs:** airport, airline, aircraft and flight management.
 
-Confirmation notifications are recorded in the database; email delivery is not implemented. Voucher application and refund execution remain planned workflows.
+Email and in-app notifications are not implemented; confirmation is shown in the web app (payment result and My Bookings). Voucher application and refund execution remain planned workflows.
 
 ## Technical Highlights
 
