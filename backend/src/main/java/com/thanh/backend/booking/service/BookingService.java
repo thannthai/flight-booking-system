@@ -337,7 +337,7 @@ public class BookingService {
         }
 
         // 5. Lưu thông tin Hành khách (Passenger) & Người giám hộ (guardian_id) -> Trả về Map<passengerIndex, Passenger>
-        Map<Integer, Passenger> passengerMap = savePassengersAndDocuments(user, passengerReqs);
+        Map<Integer, Passenger> passengerMap = savePassengersAndDocuments(passengerReqs);
 
         // 6. Lưu Vé điện tử (Ticket) & AddOn Services Snapshot bằng passengerMap chính xác 100%
         List<Ticket> savedTickets = saveTicketsAndAddOns(
@@ -625,8 +625,10 @@ public class BookingService {
 
     /**
      * Lưu thông tin Hành khách và Người giám hộ vào DB (Trả về Map<passengerIndex, Passenger>).
+     * Các hàng này thuộc về vé của booking (user = null), không thuộc danh bạ cá nhân:
+     * danh bạ chỉ chứa mục khách tự lưu qua PassengerService, nên sửa danh bạ không đổi vé đã phát hành.
      */
-    private Map<Integer, Passenger> savePassengersAndDocuments(User user, List<PassengerRequest> passengerReqs) {
+    private Map<Integer, Passenger> savePassengersAndDocuments(List<PassengerRequest> passengerReqs) {
         Map<Integer, Passenger> passengerIndexMap = new HashMap<>();
 
         // Phase 1: Lưu các hành khách ADULT và CHILD trước
@@ -634,7 +636,6 @@ public class BookingService {
             PassengerRequest req = passengerReqs.get(i);
             if (req.getPassengerType() != PassengerType.INFANT) {
                 Passenger p = Passenger.builder()
-                        .user(user)
                         .fullName(req.getFullName())
                         .dateOfBirth(req.getDateOfBirth())
                         .gender(req.getGender())
@@ -663,7 +664,6 @@ public class BookingService {
                 Passenger guardian = passengerIndexMap.get(req.getGuardianPassengerIndex());
 
                 Passenger infant = Passenger.builder()
-                        .user(user)
                         .fullName(req.getFullName())
                         .dateOfBirth(req.getDateOfBirth())
                         .gender(req.getGender())

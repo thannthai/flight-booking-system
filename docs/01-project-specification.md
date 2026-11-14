@@ -64,7 +64,7 @@ If a booking request's outcome is unknown, the application directs the user to M
 
 ### Manage bookings and saved passengers
 
-Customers can view booking history, resume an eligible pending payment, print confirmed tickets or cancel an unpaid reservation. The passenger directory reduces repeated entry; removing an entry preserves existing ticket references.
+Customers can view booking history, resume an eligible pending payment, print confirmed tickets or cancel an unpaid reservation. The passenger directory reduces repeated entry and holds only travelers a customer chose to save; removing or editing an entry never changes who an issued ticket belongs to.
 
 ## 6. Key business rules
 

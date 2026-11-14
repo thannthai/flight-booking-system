@@ -39,7 +39,7 @@ A booking contains ordered legs, each referencing a flight. A ticket links a pas
 
 `users.demo_alias` is a nullable, unique marker identifying demo accounts.
 
-Passengers may belong to a personal directory and reference a guardian. Removing a ticket-linked passenger from the directory detaches ownership while preserving ticket references. A booking may have multiple historical payment records.
+A passenger row either belongs to a customer's personal directory (`user_id` set, saved on purpose) or to the tickets of a booking (`user_id` null); passengers created by a booking never enter the directory, and a row can reference a guardian. Tickets therefore keep their holder: removing or editing a directory entry that tickets still reference detaches it and leaves the ticket passenger unchanged (an edit saves as a new entry). A booking may have multiple historical payment records.
 
 Booking totals/contact details, ticket fares and purchased add-on descriptions/prices are stored at creation. Flight, seat and passenger references remain live; this is not a fully immutable snapshot model.
 

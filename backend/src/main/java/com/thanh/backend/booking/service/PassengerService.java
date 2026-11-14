@@ -90,8 +90,42 @@ public class PassengerService {
         Passenger passenger = passengerRepository.findById(passengerId)
                 .orElseThrow(() -> new AppException(ErrorCode.PASSENGER_NOT_FOUND));
 
-        if (!passenger.getUser().getId().equals(user.getId())) {
+        // A passenger without an owner belongs to tickets only, never to a directory.
+        if (passenger.getUser() == null || !passenger.getUser().getId().equals(user.getId())) {
             throw new AppException(ErrorCode.FORBIDDEN);
+        }
+
+        List<PassengerDocument> docs = passengerDocumentRepository.findByPassengerId(passengerId);
+
+        if (ticketRepository.existsByPassengerId(passengerId)) {
+            // Legacy row shared by the directory and issued tickets: never rewrite the ticket holder.
+            // Keep the row as is, detach it from the directory and save the edit as a new entry.
+            passenger.setUser(null);
+            passengerRepository.save(passenger);
+            Passenger copy = passengerRepository.save(Passenger.builder()
+                    .user(user)
+                    .fullName(request.getFullName())
+                    .dateOfBirth(request.getDateOfBirth())
+                    .gender(request.getGender())
+                    .nationality(request.getNationality())
+                    .guardian(passenger.getGuardian())
+                    .build());
+            PassengerDocument copyDoc = null;
+            if (request.getIdentityType() != null && StringUtils.hasText(request.getIdentityNumber())) {
+                copyDoc = PassengerDocument.builder().passenger(copy)
+                        .identityType(request.getIdentityType())
+                        .identityNumber(request.getIdentityNumber())
+                        .identityExpiry(request.getIdentityExpiry())
+                        .build();
+            } else if (!docs.isEmpty()) {
+                PassengerDocument previous = docs.get(0);
+                copyDoc = PassengerDocument.builder().passenger(copy)
+                        .identityType(previous.getIdentityType())
+                        .identityNumber(previous.getIdentityNumber())
+                        .identityExpiry(previous.getIdentityExpiry())
+                        .build();
+            }
+            return toResponse(copy, copyDoc == null ? null : passengerDocumentRepository.save(copyDoc));
         }
 
         passenger.setFullName(request.getFullName());
@@ -103,7 +137,6 @@ public class PassengerService {
 
         PassengerDocument updatedDoc = null;
         if (request.getIdentityType() != null && StringUtils.hasText(request.getIdentityNumber())) {
-            List<PassengerDocument> docs = passengerDocumentRepository.findByPassengerId(passengerId);
             PassengerDocument doc;
             if (!docs.isEmpty()) {
                 doc = docs.get(0);
@@ -121,11 +154,15 @@ public class PassengerService {
             updatedDoc = passengerDocumentRepository.save(doc);
         }
 
-        PassengerResponse res = bookingMapper.toPassengerResponse(updatedPassenger);
-        if (updatedDoc != null) {
-            res.setIdentityType(updatedDoc.getIdentityType());
-            res.setIdentityNumber(updatedDoc.getIdentityNumber());
-            res.setIdentityExpiry(updatedDoc.getIdentityExpiry());
+        return toResponse(updatedPassenger, updatedDoc);
+    }
+
+    private PassengerResponse toResponse(Passenger passenger, PassengerDocument document) {
+        PassengerResponse res = bookingMapper.toPassengerResponse(passenger);
+        if (document != null) {
+            res.setIdentityType(document.getIdentityType());
+            res.setIdentityNumber(document.getIdentityNumber());
+            res.setIdentityExpiry(document.getIdentityExpiry());
         }
         return res;
     }
