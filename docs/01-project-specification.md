@@ -39,7 +39,7 @@ Status describes the current implementation. Deployed provider integration requi
 | History and tickets | Review personal bookings, resume payment, display/print demo e-tickets and cancel pending reservations. | Implemented |
 | Passenger directory | Save, edit, quickfill and remove own passenger entries. Document-only removal is unsupported. | Implemented within this scope |
 | Demo | Try the booking flow through one shared account and simulated payment. | Implemented; enabled explicitly on demo/dev backends |
-| Administration | Maintain airports, airlines, aircraft and flights through APIs. | Implemented |
+| Administration | Maintain airports, airlines, aircraft and flights through APIs. A flight with bookings cannot be deleted or have its airline, aircraft or route changed; changing the aircraft of an unbooked flight rebuilds its seat map. Cancelling a flight does not yet refund or notify existing bookings. | Implemented |
 | Notifications | Email and in-app notifications; confirmation is shown in the web app instead. | Planned; not implemented |
 | Voucher/refund workflows | Voucher validation, completed-booking cancellation approval and refund execution. | Planned; no complete workflow |
 

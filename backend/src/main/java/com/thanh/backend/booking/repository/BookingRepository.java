@@ -23,6 +23,15 @@ public interface BookingRepository extends JpaRepository<Booking, Long> {
 
     boolean existsByPnr(String pnr);
 
+    /** True when any leg of the booking is on a flight that can no longer be sold or paid for. */
+    @Query("""
+            SELECT COUNT(l) > 0 FROM BookingLeg l
+            WHERE l.booking.id = :bookingId
+              AND l.flight.status NOT IN (com.thanh.backend.flight.enums.FlightStatus.SCHEDULED,
+                                          com.thanh.backend.flight.enums.FlightStatus.DELAYED)
+            """)
+    boolean hasLegOnNonBookableFlight(@Param("bookingId") Long bookingId);
+
     @Query("SELECT b FROM Booking b WHERE b.user.id = :userId ORDER BY b.createdAt DESC")
     Page<Booking> findByUserId(@Param("userId") Long userId, Pageable pageable);
 

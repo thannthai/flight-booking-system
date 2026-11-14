@@ -209,6 +209,19 @@ public class FlightService {
         Airport dest = airportRepository.findById(request.getDestAirportId())
                 .orElseThrow(() -> new AppException(ErrorCode.AIRPORT_NOT_FOUND));
 
+        // Airline, aircraft and route define what customers bought; they cannot change under existing bookings.
+        boolean aircraftChanged = !flight.getAircraft().getId().equals(aircraft.getId());
+        boolean identityChanged = aircraftChanged
+                || !flight.getAirline().getId().equals(airline.getId())
+                || !flight.getOrigin().getId().equals(origin.getId())
+                || !flight.getDest().getId().equals(dest.getId());
+        if (identityChanged && flightRepository.hasBookingLegs(id)) {
+            throw new AppException(ErrorCode.FLIGHT_HAS_BOOKINGS);
+        }
+        if (aircraftChanged && flightSeatRepository.existsLiveHoldByFlightId(id)) {
+            throw new AppException(ErrorCode.FLIGHT_SEATS_IN_USE);
+        }
+
         flightMapper.updateEntityFromRequest(request, flight);
         flight.setAirline(airline);
         flight.setAircraft(aircraft);
@@ -220,6 +233,14 @@ public class FlightService {
         }
 
         Flight updatedFlight = flightRepository.save(flight);
+
+        if (aircraftChanged) {
+            // The seat map is generated from the aircraft layout, so a new aircraft needs a new seat map.
+            // Delete first and flush: (flight_id, seat_no) is unique and Hibernate inserts before it deletes.
+            flightSeatRepository.deleteAll(flightSeatRepository.findByFlightId(id));
+            flightSeatRepository.flush();
+            generateSeatsForFlight(updatedFlight, aircraft, updatedFlight.getBasePrice());
+        }
         return flightMapper.toResponse(updatedFlight);
     }
 
@@ -255,6 +276,14 @@ public class FlightService {
     public void deleteFlight(Long id) {
         Flight flight = flightRepository.findById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.FLIGHT_NOT_FOUND));
+
+        // Historical (even cancelled) bookings keep referencing the flight; deleting it would orphan them.
+        if (flightRepository.hasBookingLegs(id)) {
+            throw new AppException(ErrorCode.FLIGHT_HAS_BOOKINGS);
+        }
+        if (flightSeatRepository.existsLiveHoldByFlightId(id)) {
+            throw new AppException(ErrorCode.FLIGHT_SEATS_IN_USE);
+        }
 
         List<FlightSeat> seats = flightSeatRepository.findByFlightId(id);
         if (!seats.isEmpty()) {

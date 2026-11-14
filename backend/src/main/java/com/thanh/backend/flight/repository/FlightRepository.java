@@ -23,6 +23,13 @@ public interface FlightRepository extends JpaRepository<Flight, Long> {
 
     boolean existsByAirlineId(Long airlineId);
 
+    /**
+     * True when any booking, including a cancelled one, still references the flight. Written as JPQL on the
+     * entity name so the flight module takes no compile-time dependency on the booking module.
+     */
+    @Query("SELECT COUNT(l) > 0 FROM BookingLeg l WHERE l.flight.id = :flightId")
+    boolean hasBookingLegs(@Param("flightId") Long flightId);
+
     boolean existsByOriginIdOrDestId(Long originId, Long destId);
 
     @Query(value = """

@@ -104,6 +104,10 @@ public class PaymentServiceImpl implements PaymentService {
             if (OffsetDateTime.now(ZoneOffset.UTC).isAfter(booking.getPaymentDeadline())) {
                 throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
             }
+            // A flight cancelled or departed after booking can no longer be paid for.
+            if (bookingRepository.hasLegOnNonBookableFlight(booking.getId())) {
+                throw new AppException(ErrorCode.FLIGHT_NOT_BOOKABLE);
+            }
 
             if (demo.isDemoAccount(booking.getUser()) && !demo.usesDemoPayment(booking.getUser())) throw new AppException(ErrorCode.FORBIDDEN);
             String provider = demo.usesDemoPayment(booking.getUser()) ? "DEMO" : "PAYOS";
@@ -416,6 +420,7 @@ public class PaymentServiceImpl implements PaymentService {
                     || payment.getRefundStatus() != RefundStatus.NONE) throw new AppException(ErrorCode.PAYMENT_STATUS_INVALID);
             OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
             if (now.isAfter(booking.getPaymentDeadline())) throw new AppException(ErrorCode.BOOKING_PAYMENT_EXPIRED);
+            if (bookingRepository.hasLegOnNonBookableFlight(booking.getId())) throw new AppException(ErrorCode.FLIGHT_NOT_BOOKABLE);
             event[0] = completePayment(payment, booking, now, "DEMO-" + payment.getOrderCode(), "Simulated payment; no funds transferred");
             return paymentMapper.toResponse(payment);
         });

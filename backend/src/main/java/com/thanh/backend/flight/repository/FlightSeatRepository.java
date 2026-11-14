@@ -17,6 +17,24 @@ public interface FlightSeatRepository extends JpaRepository<FlightSeat, Long> {
 
     List<FlightSeat> findByFlightId(Long flightId);
 
+    /** Seats this user holds right now, other than the ones being (re)held by the current request. */
+    @Query("""
+            SELECT COUNT(s) FROM FlightSeat s
+            WHERE s.status = com.thanh.backend.flight.enums.SeatStatus.HELD
+              AND s.heldByUser.id = :userId
+              AND s.heldUntil > cast(function('clock_timestamp') as OffsetDateTime)
+              AND s.id NOT IN :excludedSeatIds
+            """)
+    long countLiveHoldsByUserExcluding(@Param("userId") Long userId, @Param("excludedSeatIds") java.util.Collection<Long> excludedSeatIds);
+
+    @Query("""
+            SELECT COUNT(s) > 0 FROM FlightSeat s
+            WHERE s.flight.id = :flightId
+              AND s.status = com.thanh.backend.flight.enums.SeatStatus.HELD
+              AND s.heldUntil > cast(function('clock_timestamp') as OffsetDateTime)
+            """)
+    boolean existsLiveHoldByFlightId(@Param("flightId") Long flightId);
+
     List<FlightSeat> findByFlightIdAndStatus(Long flightId, SeatStatus status);
 
     @Modifying

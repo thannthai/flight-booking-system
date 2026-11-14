@@ -46,6 +46,7 @@ sequenceDiagram
 Rules the flow keeps:
 
 - **No double allocation.** The database `UPDATE` is the decision: it succeeds only for an available seat, an expired hold, or the same user's identical live hold. Redis admission and the lease recheck add fencing but never override the row.
+- **Bounded holds.** A customer can hold at most 20 seats at once (`app.booking.max-held-seats-per-user`); seats named in a retried request are not counted twice. This is a soft limit: two simultaneous requests can overshoot it by at most their own sizes.
 - **No deadline extension.** Re-holding a seat that is still live in the database reuses its original expiry (`SET ... PXAT`). A retry cannot restart the 15-minute window.
 - **Older work cannot release a newer lease.** Leases carry a random token. Release is a compare-and-delete, and rollback cleanup only deletes a lease whose token matches and whose seat has no live hold in the database.
 - **Atomic booking.** Booking, legs, passengers, tickets, add-ons and seat claims commit together or not at all. Prices come from server-side seat and add-on prices, never from the request.
@@ -98,7 +99,7 @@ sequenceDiagram
 
 `REFUND_REQUIRED` records that money needs to be returned; the application does not refund automatically, so this state needs an operational process.
 
-Payment-link creation follows the same discipline: a short transaction prepares the payment intent, the payOS call happens with no database lock held, and a second short transaction attaches the URL and QR data only if the payment is still pending. Whenever both rows are locked, the booking row is locked before the payment row.
+Payment-link creation is refused when any leg of the booking is on a flight that is no longer sellable (cancelled or departed), so a customer cannot start paying for a flight the airline has withdrawn. Payment-link creation follows the same discipline: a short transaction prepares the payment intent, the payOS call happens with no database lock held, and a second short transaction attaches the URL and QR data only if the payment is still pending. Whenever both rows are locked, the booking row is locked before the payment row.
 
 **Sources:** [PaymentWebhookController](../backend/src/main/java/com/thanh/backend/payment/controller/PaymentWebhookController.java), [PaymentServiceImpl](../backend/src/main/java/com/thanh/backend/payment/service/impl/PaymentServiceImpl.java), [PayOSGatewayServiceImpl](../backend/src/main/java/com/thanh/backend/payment/service/impl/PayOSGatewayServiceImpl.java). **Tests:** [`WebhookIdempotencyIT`](../backend/src/test/java/com/thanh/backend/payment/service/WebhookIdempotencyIT.java), [`CancelPaymentLifecycleIT`](../backend/src/test/java/com/thanh/backend/payment/service/CancelPaymentLifecycleIT.java).
 

@@ -80,6 +80,7 @@ app:
     account-password: ${DEMO_ACCOUNT_PASSWORD:}
   booking:
     hold-ttl-seconds: 900
+    max-held-seats-per-user: 20
 
 payos:
   client-id: ${PAYOS_CLIENT_ID}

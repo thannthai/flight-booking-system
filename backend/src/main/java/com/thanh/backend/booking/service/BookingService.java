@@ -89,6 +89,9 @@ public class BookingService {
     @Value("${app.booking.hold-ttl-seconds:900}")
     private long holdTtlSeconds;
 
+    @Value("${app.booking.max-held-seats-per-user:20}")
+    private int maxHeldSeatsPerUser;
+
     private final BookingRepository bookingRepository;
     private final BookingLegRepository bookingLegRepository;
     private final PassengerRepository passengerRepository;
@@ -114,6 +117,14 @@ public class BookingService {
         if (request.getSeatIds() == null || request.getSeatIds().isEmpty()
                 || request.getSeatIds().stream().distinct().count() != request.getSeatIds().size()) {
             throw new AppException(ErrorCode.INVALID_SEAT_SELECTION);
+        }
+
+        // Bounded inventory: seats this user already holds elsewhere plus this request. Seats named in the
+        // request are excluded so retrying the same hold never counts twice. A soft limit: two simultaneous
+        // requests from one user can overshoot it slightly, but never beyond their own request sizes.
+        long heldElsewhere = flightSeatRepository.countLiveHoldsByUserExcluding(user.getId(), request.getSeatIds());
+        if (heldElsewhere + request.getSeatIds().size() > maxHeldSeatsPerUser) {
+            throw new AppException(ErrorCode.SEAT_HOLD_LIMIT_EXCEEDED);
         }
 
         OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
