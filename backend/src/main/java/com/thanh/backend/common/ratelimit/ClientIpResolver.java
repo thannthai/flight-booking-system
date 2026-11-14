@@ -5,6 +5,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.regex.Pattern;
+
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -22,7 +26,14 @@ public class ClientIpResolver {
         this.properties = properties;
     }
 
+    private static final Pattern ADDRESS = Pattern.compile("^[0-9a-fA-F:.]{2,45}$");
+    private static final int MIN_SECRET_LENGTH = 16;
+
     public String resolve(HttpServletRequest request) {
+        String proxied = fromTrustedFrontend(request);
+        if (proxied != null) {
+            return proxied;
+        }
         int hops = properties.getTrustedProxyHops();
         String header = request.getHeader("X-Forwarded-For");
         if (hops > 0 && StringUtils.hasText(header)) {
@@ -41,5 +52,18 @@ public class ClientIpResolver {
                     + "of trusted proxies");
         }
         return request.getRemoteAddr();
+    }
+
+    /** The address the frontend proxy reports, accepted only with the shared secret and in address format. */
+    private String fromTrustedFrontend(HttpServletRequest request) {
+        String secret = properties.getProxySecret();
+        String presented = request.getHeader("X-Proxy-Secret");
+        String address = request.getHeader("X-Client-IP");
+        if (secret == null || secret.length() < MIN_SECRET_LENGTH || presented == null || address == null) {
+            return null;
+        }
+        boolean matches = MessageDigest.isEqual(secret.getBytes(StandardCharsets.UTF_8), presented.getBytes(StandardCharsets.UTF_8));
+        String candidate = address.trim();
+        return matches && ADDRESS.matcher(candidate).matches() ? candidate : null;
     }
 }

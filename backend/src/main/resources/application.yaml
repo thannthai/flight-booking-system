@@ -86,6 +86,8 @@ app:
     # Trusted reverse proxies in front of the backend (0 = use the socket address). Behind a proxy this MUST
     # be set, or every customer shares one counter. Verify the X-Forwarded-For chain on the deployed domain.
     trusted-proxy-hops: ${RATE_LIMIT_TRUSTED_PROXY_HOPS:0}
+    # Shared with the Vercel frontend (RATE_LIMIT_PROXY_SECRET there too); 16+ random characters. Empty = off.
+    proxy-secret: ${RATE_LIMIT_PROXY_SECRET:}
     login-failure-limit: 5
     login-failure-window-seconds: 900
     rules:

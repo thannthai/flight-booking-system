@@ -23,8 +23,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
 /** Rate limiting through the real HTTP stack with one trusted proxy hop, so tests can set the client address. */
-@TestPropertySource(properties = "app.rate-limit.trusted-proxy-hops=1")
+@TestPropertySource(properties = {"app.rate-limit.trusted-proxy-hops=1", "app.rate-limit.proxy-secret=" + RateLimitIT.PROXY_SECRET})
 class RateLimitIT extends AbstractIntegrationTest {
+    static final String PROXY_SECRET = "0123456789abcdef0123456789abcdef";
     private static final String PASSWORD = "Passw0rd!";
 
     @Autowired TestRestTemplate http;
@@ -133,5 +134,34 @@ class RateLimitIT extends AbstractIntegrationTest {
         assertThat(limiter.hit("ratelimit:test:window", 1, Duration.ofSeconds(1)).allowed()).isFalse();
 
         await().atMost(Duration.ofSeconds(5)).until(() -> limiter.hit("ratelimit:test:window", 1, Duration.ofSeconds(1)).allowed());
+    }
+
+    int attempt;
+
+    ResponseEntity<String> loginViaFrontend(String clientIp, String secret) {
+        var headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.add("X-Client-IP", clientIp);
+        if (secret != null) headers.add("X-Proxy-Secret", secret);
+        return http.exchange("/api/v1/auth/login", HttpMethod.POST,
+                new HttpEntity<>("{\"email\":\"visitor" + (++attempt) + "@example.invalid\",\"password\":\"" + PASSWORD + "\"}", headers), String.class);
+    }
+
+    @Test
+    void theFrontendProxyAddressGivesEachVisitorTheirOwnCounter() {
+        for (int i = 0; i < 10; i++) {
+            assertThat(loginViaFrontend("203.0.113.1", PROXY_SECRET).getStatusCode().value()).isEqualTo(401);
+        }
+        assertThat(loginViaFrontend("203.0.113.1", PROXY_SECRET).getStatusCode().value()).isEqualTo(429);
+        // Another visitor behind the same proxy is unaffected.
+        assertThat(loginViaFrontend("203.0.113.2", PROXY_SECRET).getStatusCode().value()).isEqualTo(401);
+    }
+
+    @Test
+    void aForgedClientAddressWithoutTheSecretDoesNotEscapeTheLimit() {
+        for (int i = 0; i < 10; i++) {
+            assertThat(loginViaFrontend("198.18.0." + i, "not-the-secret-not-the-secret").getStatusCode().value()).isEqualTo(401);
+        }
+        assertThat(loginViaFrontend("198.18.1.1", null).getStatusCode().value()).isEqualTo(429);
     }
 }

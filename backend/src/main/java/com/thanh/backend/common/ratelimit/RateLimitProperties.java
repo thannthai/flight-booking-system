@@ -23,6 +23,13 @@ public class RateLimitProperties {
      */
     private int trustedProxyHops = 0;
 
+    /**
+     * Shared secret that the frontend proxy sends in {@code X-Proxy-Secret} together with the real client address
+     * in {@code X-Client-IP}. When it is set (16+ characters) and matches, that address is used. Without the secret
+     * the header is ignored, so a caller reaching this backend directly cannot choose its own identity.
+     */
+    private String proxySecret = "";
+
     /** Wrong passwords tolerated per (email, client address) before login is blocked for the window. */
     private int loginFailureLimit = 5;
     private int loginFailureWindowSeconds = 900;
