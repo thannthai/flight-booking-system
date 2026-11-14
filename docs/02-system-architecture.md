@@ -224,6 +224,8 @@ For a non-demo backend, activate `prod` or `production` and supply `DB_URL`, `DB
 
 Rate limiting needs the real client address. Behind a reverse proxy the backend only sees the proxy, so set `RATE_LIMIT_TRUSTED_PROXY_HOPS` to the number of trusted proxies in front of it (0 uses the socket address); otherwise every customer shares one counter and the login limit applies to the whole site. Check the `X-Forwarded-For` chain on the deployed domain before relying on it. `RATE_LIMIT_ENABLED=false` turns the limits off. See [decision 0006](adr/0006-redis-rate-limiting.md).
 
+To verify the value after deploying: from one network, submit wrong passwords about eleven times until the site answers "Too many requests"; then, from a different network (for example a phone on mobile data), sign in normally. If that second client is refused as well, all clients still share one counter, so adjust `RATE_LIMIT_TRUSTED_PROXY_HOPS` (try one lower), or set `RATE_LIMIT_ENABLED=false` until the forwarded-header chain is understood. A one-time warning in the backend log (`X-Forwarded-For is present but ... trusted-proxy-hops=0`) means no proxy hop is configured. This is not covered by automated tests, which only prove the logic for a given value.
+
 CORS values must be exact HTTPS origins without paths or trailing slashes; payOS callback URLs must also use HTTPS. Set the frontend's server-only `BACKEND_API_URL=https://<backend-host>/api/v1` before building.
 
 After deployment, verify login, reload, refresh and logout on the HTTPS domain. Automated tests do not verify hosting TLS or proxy cookie forwarding.

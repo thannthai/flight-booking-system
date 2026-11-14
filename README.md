@@ -29,11 +29,19 @@ Email and in-app notifications are not implemented; confirmation is shown in the
 
 ## Technical Highlights
 
-- **Concurrency-safe allocation:** Redis leases and conditional seat updates protect competing reservations. Retries preserve hold deadlines; stale cleanup cannot release a newer hold.
-- **Transaction consistency:** booking records, legs, passengers, tickets and seat claims commit together. Provider network calls run outside payment preparation/attachment transactions.
-- **Idempotent payment confirmation:** verified receipts are checked against the payable amount and deadline; duplicate callbacks do not issue tickets again, and late receipts cannot reopen cancelled bookings.
-- **Session lifecycle:** single-use refresh tokens and account-bound cleanup protect session recovery, logout and account switching.
+- **Concurrency-safe allocation:** Redis leases and conditional seat updates protect competing reservations. Retries preserve hold deadlines; stale cleanup cannot release a newer hold. [Sequence](docs/05-critical-flows.md#1-seat-hold-and-booking-creation) · [Decision 0002](docs/adr/0002-seat-holds-redis-lease-and-database-update.md)
+- **Transaction consistency:** booking records, legs, passengers, tickets and seat claims commit together. Provider network calls run outside payment preparation/attachment transactions, and rows are always locked booking-first. [Decision 0003](docs/adr/0003-lock-order-and-no-locks-across-provider-calls.md)
+- **Idempotent payment confirmation:** verified receipts are checked against the payable amount and deadline; duplicate callbacks do not issue tickets again, and late receipts cannot reopen cancelled bookings. [Sequence](docs/05-critical-flows.md#2-payment-webhook) · [Decision 0004](docs/adr/0004-backend-owned-payment-deadline-and-webhook-confirmation.md)
+- **Session lifecycle:** single-use refresh tokens and account-bound cleanup protect session recovery, logout and account switching. [Decision 0005](docs/adr/0005-refresh-cookie-via-same-origin-proxy.md)
 - **Recovery after uncertain requests:** checkout avoids automatically resending a booking request whose previous outcome is unknown.
+
+## Engineering Quality
+
+- **Architecture as tests:** an ArchUnit test locks the module dependency graph and layer rules, so a new cross-module dependency fails the build. [Decision 0001](docs/adr/0001-modular-monolith-with-enforced-boundaries.md)
+- **Proven against real services:** concurrency, rollback and webhook-idempotency scenarios run on PostgreSQL and Redis through Testcontainers rather than mocks.
+- **Upgrade-safe migrations:** a database seeded with bookings, tickets and payments at an older schema is upgraded to the latest migration and checked.
+- **CI quality gates:** coverage thresholds on the core booking and payment services, a gitleaks scan of the full git history, and a production dependency audit.
+- **Fail-fast production configuration:** the production profile refuses to start without HTTPS origins and callbacks, Secure cookies and database credentials, and turns SQL logging and API docs off.
 
 ## Tech Stack
 
@@ -45,8 +53,8 @@ Email and in-app notifications are not implemented; confirmation is shown in the
 | Temporary state | Redis 7 for seat leases and authentication-related state. |
 | Payments | payOS SDK, QR checkout and verified webhooks; marked demo accounts use simulated checkout. |
 | Maps | MapLibre GL JS and OpenFreeMap. |
-| Testing | JUnit, Mockito and PostgreSQL/Redis Testcontainers; Node/jsdom regressions and Playwright browser smoke. |
-| Tooling | Maven Wrapper, pnpm, Docker Compose and GitHub Actions. |
+| Testing | JUnit, Mockito, ArchUnit and PostgreSQL/Redis Testcontainers with a JaCoCo coverage gate; Node/jsdom regressions and Playwright browser smoke. |
+| Tooling | Maven Wrapper, pnpm, Docker Compose, GitHub Actions and gitleaks. |
 
 ## Architecture
 
