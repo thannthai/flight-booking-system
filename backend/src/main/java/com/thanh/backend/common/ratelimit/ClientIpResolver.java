@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ClientIpResolver {
     private final RateLimitProperties properties;
     private final AtomicBoolean warnedAboutProxy = new AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicLong lastProxyDiagnosticAt = new java.util.concurrent.atomic.AtomicLong();
 
     public ClientIpResolver(RateLimitProperties properties) {
         this.properties = properties;
@@ -54,16 +55,35 @@ public class ClientIpResolver {
         return request.getRemoteAddr();
     }
 
+    /** A proxy secret is configured but unusable for this request; say why, at most once every 5 minutes, without values. */
+    private void diagnose(String reason) {
+        long now = System.currentTimeMillis();
+        long last = lastProxyDiagnosticAt.get();
+        if (now - last >= 300_000 && lastProxyDiagnosticAt.compareAndSet(last, now)) {
+            log.warn("RATE_LIMIT_PROXY_SECRET is set but not used for a request: {}", reason);
+        }
+    }
+
     /** The address the frontend proxy reports, accepted only with the shared secret and in address format. */
     private String fromTrustedFrontend(HttpServletRequest request) {
         String secret = properties.getProxySecret();
         String presented = request.getHeader("X-Proxy-Secret");
         String address = request.getHeader("X-Client-IP");
-        if (secret == null || secret.length() < MIN_SECRET_LENGTH || presented == null || address == null) {
+        if (secret == null || secret.length() < MIN_SECRET_LENGTH) {
+            return null;
+        }
+        if (presented == null || address == null) {
+            diagnose("the frontend proxy headers are missing (X-Client-IP present: " + (address != null)
+                    + ", X-Proxy-Secret present: " + (presented != null) + ")");
             return null;
         }
         boolean matches = MessageDigest.isEqual(secret.getBytes(StandardCharsets.UTF_8), presented.getBytes(StandardCharsets.UTF_8));
         String candidate = address.trim();
+        if (!matches) {
+            diagnose("X-Proxy-Secret does not match RATE_LIMIT_PROXY_SECRET");
+        } else if (!ADDRESS.matcher(candidate).matches()) {
+            diagnose("X-Client-IP is not an address");
+        }
         return matches && ADDRESS.matcher(candidate).matches() ? candidate : null;
     }
 }
