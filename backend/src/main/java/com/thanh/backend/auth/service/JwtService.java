@@ -15,7 +15,6 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
-import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 @Service
@@ -148,19 +147,6 @@ public class JwtService {
     public void revokeRefreshToken(Long userId, String refreshToken) {
         String key = buildRefreshKey(userId, refreshToken);
         redisTemplate.delete(key);
-    }
-
-    /**
-     * Xóa TẤT CẢ refresh token của một user khỏi Redis.
-     * Dùng cho "Đăng xuất tất cả thiết bị" hoặc khi user đổi mật khẩu.
-     * SCAN pattern "refresh:{userId}:*" để tìm hết rồi xóa.
-     */
-    public void revokeAllUserRefreshTokens(Long userId) {
-        // SCAN an toàn hơn KEYS trong production — không block Redis
-        Set<String> keys = redisTemplate.keys(REFRESH_PREFIX + userId + ":*");
-        if (keys != null && !keys.isEmpty()) {
-            redisTemplate.delete(keys);
-        }
     }
 
     // ══════════════════════════════════════════════════════════════════════════
